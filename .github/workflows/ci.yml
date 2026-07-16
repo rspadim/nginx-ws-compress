@@ -103,25 +103,30 @@ jobs:
         # Install Playwright browsers (skip for faster CI if needed)
         playwright install chromium 2>/dev/null || true
 
-    - name: Run integration tests
+    - name: Run module disabled tests
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
-        python -m pytest tests/python/ -v --asyncio-mode=auto \
-          -k "not browser"
+        python -m pytest tests/python/test_module_disabled.py -v --asyncio-mode=auto
+
+    - name: Run roundtrip tests
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_roundtrip.py -v --asyncio-mode=auto
+
+    - name: Run load test (50 concurrent connections)
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_load.py -v --asyncio-mode=auto
+      continue-on-error: true
 
     - name: Run browser test (Playwright)
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
         python -m pytest tests/python/test_browser.py -v --asyncio-mode=auto
-      continue-on-error: true
-
-    - name: Run load test
-      run: |
-        cd nginx-ws-compress
-        source tests/python/venv/bin/activate
-        python -m pytest tests/python/test_load.py -v --asyncio-mode=auto
       continue-on-error: true
 
   # Minimal build-only job for quick feedback
