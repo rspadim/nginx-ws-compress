@@ -206,41 +206,54 @@ jobs:
         ls -la objs/ngx_http_ws_deflate_module.so
         file objs/ngx_http_ws_deflate_module.so
 
-  # Windows build (MSYS2)
+  # Windows build (MSVC via bash — same approach as nginx official CI)
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 15
     continue-on-error: true
-    defaults:
-      run:
-        shell: msys2 {0}
     steps:
     - name: Checkout module
       uses: actions/checkout@v4
       with:
         path: nginx-ws-compress
 
-    - name: Setup MSYS2
-      uses: msys2/setup-msys2@v2
-      with:
-        update: true
-        install: >-
-          make
-          gcc
-          perl
-          pcre2-devel
-          zlib-devel
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Build nginx + module
+    - name: Install dependencies (pcre2, zlib)
+      shell: cmd
+      run: |
+        curl -sLO https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.tar.gz
+        tar -C objs --transform "s/pcre2-10.44/pcre/" -xzf pcre2-10.44.tar.gz
+        echo #include ^<stdint.h^> > objs\pcre\src\inttypes.h
+        curl -sLO https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+        tar -C objs --transform "s/zlib-1.3.1/zlib/" -xzf zlib-1.3.1.tar.gz
+      working-directory: nginx-ws-compress
+
+    - name: Clone nginx
+      shell: cmd
       run: |
         git clone https://github.com/nginx/nginx.git nginx-src
         cd nginx-src
         git checkout release-1.31.3
-        ./auto/configure \
-          --with-cc=gcc \
-          --with-cc-opt="-I/usr/include" \
-          --with-ld-opt="-L/usr/lib" \
+
+    - name: Configure and build (bash + nmake)
+      shell: cmd
+      run: |
+        cd nginx-src
+        bash.exe auto/configure ^
+          --with-cc=cl ^
+          --prefix= ^
+          --conf-path=conf/nginx.conf ^
+          --pid-path=logs/nginx.pid ^
+          --http-log-path=logs/access.log ^
+          --error-log-path=logs/error.log ^
+          --sbin-path=nginx.exe ^
+          --http-client-body-temp-path=temp/client_body_temp ^
+          --http-proxy-temp-path=temp/proxy_temp ^
+          --with-cc-opt="-DFD_SETSIZE=1024 -I../objs/pcre -I../objs/zlib" ^
+          --with-pcre=../objs/pcre ^
+          --with-zlib=../objs/zlib ^
           --add-module=../nginx-ws-compress/ngx_http_ws_deflate_module
-        make -j$(nproc)
-        echo === Build complete ===
-        ls -la objs/nginx.exe 2>/dev/null || echo "nginx.exe not found"
+        nmake -f objs\Makefile
+        if exist objs\nginx.exe (echo SUCCESS) else (echo nginx.exe not found & exit /b 1)
