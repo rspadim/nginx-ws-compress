@@ -80,35 +80,58 @@ WebSocket frames.
 
 - nginx 1.9.11+ (dynamic module support)
 - zlib-ng (recommended) or zlib
+- C compiler (gcc/clang on Linux/macOS, MSVC on Windows)
 
-### Compile
+### Linux / macOS
 
 ```bash
-# Clone nginx source
 git clone https://github.com/nginx/nginx.git
 cd nginx
 
-# Clone the module
-git clone https://github.com/rspadim/nginx-ws-compress.git
-
-# Configure with the module
+# Build with the module
 ./auto/configure \
   --with-compat \
-  --add-dynamic-module=path/to/nginx-ws-compress/ngx_http_ws_deflate_module \
-  --with-cc-opt="-I/usr/local/include" \
-  --with-ld-opt="-L/usr/local/lib"
+  --add-dynamic-module=/path/to/nginx-ws-compress/ngx_http_ws_deflate_module
 
-# Build only the module
 make modules
 ```
 
-The compiled module is at `objs/ngx_http_ws_deflate_module.so`.
+Or use the build script:
+
+```bash
+./scripts/build.sh
+```
+
+### Windows (MSVC)
+
+Open **x64 Native Tools Command Prompt for VS** and run:
+
+```cmd
+git clone https://github.com/nginx/nginx.git
+cd nginx
+
+auto\configure ^
+  --with-cc=cl ^
+  --add-module=C:\path\to\nginx-ws-compress\ngx_http_ws_deflate_module
+
+nmake -f objs\Makefile
+```
+
+Or use PowerShell:
+
+```powershell
+.\scripts\build.ps1
+```
 
 ### Install
 
 ```bash
 sudo cp objs/ngx_http_ws_deflate_module.so /etc/nginx/modules/
 ```
+
+> **Windows note**: nginx on Windows does not support dynamic modules (`load_module`).
+> The module must be compiled statically with `--add-module` (not `--add-dynamic-module`).
+> Our `configure` step above uses `--add-module` for Windows compatibility.
 
 ---
 
