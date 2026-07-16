@@ -129,6 +129,8 @@ jobs:
         pip install -r requirements.txt
         # Install Playwright browsers (skip for faster CI if needed)
         playwright install chromium 2>/dev/null || true
+        # Install Chromium system dependencies
+        playwright install-deps chromium 2>/dev/null || true
 
     - name: Run module disabled tests
       if: runner.os != 'macOS'
