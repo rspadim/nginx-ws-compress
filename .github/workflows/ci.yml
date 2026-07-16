@@ -122,6 +122,14 @@ jobs:
         python -m pytest tests/python/test_load.py -v --asyncio-mode=auto
       continue-on-error: true
 
+    - name: Run memory test (~160MB through nginx)
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_memory.py -v --asyncio-mode=auto -s
+      continue-on-error: true
+      timeout-minutes: 5
+
     - name: Run browser test (Playwright)
       run: |
         cd nginx-ws-compress
