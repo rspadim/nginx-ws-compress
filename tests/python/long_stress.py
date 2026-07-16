@@ -103,11 +103,12 @@ async def main():
 
     backend = subprocess.Popen(
         [str(venv_python), "-m", "uvicorn", "ws_backend:app",
-         "--host", "127.0.0.1", "--port", "9001", "--log-level", "error"],
+         "--host", "127.0.0.1", "--port", "9001", "--log-level", "error",
+         "--workers", "4"],
         cwd=str(Path(__file__).parent),
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    time.sleep(2)
+    time.sleep(3)
 
     # Start nginx
     prefix = "/tmp/nginx-ws-stress"
