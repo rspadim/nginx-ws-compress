@@ -206,11 +206,10 @@ jobs:
         ls -la objs/ngx_http_ws_deflate_module.so
         file objs/ngx_http_ws_deflate_module.so
 
-  # Windows build (MSVC via bash — same approach as nginx official CI)
+  # Windows build
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 15
-    continue-on-error: true
     steps:
     - name: Checkout module
       uses: actions/checkout@v4
@@ -220,21 +219,11 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Install dependencies (pcre2, zlib)
+    - name: Install dependencies via vcpkg
       shell: powershell
       run: |
-        cd nginx-ws-compress
-        New-Item -ItemType Directory -Path objs\lib -Force
-        # Download PCRE2
-        curl.exe -sLO https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.tar.gz
-        tar -xzf pcre2-10.44.tar.gz -C objs\lib
-        Rename-Item objs\lib\pcre2-10.44 objs\lib\pcre
-        # Download zlib
-        curl.exe -sLO https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
-        tar -xzf zlib-1.3.1.tar.gz -C objs\lib
-        Rename-Item objs\lib\zlib-1.3.1 objs\lib\zlib
-        # Create inttypes.h stub for PCRE2
-        Set-Content -Path objs\lib\pcre\src\inttypes.h -Value '#include <stdint.h>'
+        vcpkg install pcre2 zlib --triplet x64-windows
+        echo "VCPKG_PATH=C:\vcpkg\installed\x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Clone nginx
       shell: cmd
@@ -257,9 +246,8 @@ jobs:
           --sbin-path=nginx.exe ^
           --http-client-body-temp-path=temp/client_body_temp ^
           --http-proxy-temp-path=temp/proxy_temp ^
-          --with-cc-opt="-DFD_SETSIZE=1024" ^
-          --with-pcre=../nginx-ws-compress/objs/lib/pcre ^
-          --with-zlib=../nginx-ws-compress/objs/lib/zlib ^
-          --add-module=../nginx-ws-compress/ngx_http_ws_deflate_module
+          --with-cc-opt="-DFD_SETSIZE=1024 -IC:\vcpkg\installed\x64-windows\include" ^
+          --with-ld-opt="-LIBPATH:C:\vcpkg\installed\x64-windows\lib" ^
+          --add-module=..\nginx-ws-compress\ngx_http_ws_deflate_module
         nmake -f objs\Makefile
-        if exist objs\nginx.exe (echo SUCCESS) else (echo nginx.exe not found & exit /b 1)
+        if exist objs\nginx.exe (echo SUCCESS) else (echo FAILED & exit /b 1)
