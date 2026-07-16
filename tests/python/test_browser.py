@@ -113,7 +113,6 @@ def test_varying_payload_sizes(nginx_server):
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        # Build JS code that sends each payload and collects results
         js_sends = "const payloads = [" + ",".join(
             f'{{size:{s}, data:"A".repeat({s})}}' for s in sizes
         ) + "];"
@@ -126,10 +125,7 @@ def test_varying_payload_sizes(nginx_server):
                 let idx = 0;
 
                 await new Promise((resolve, reject) => {{
-                    ws.onopen = () => {{
-                        // Send first payload
-                        ws.send(payloads[0].data);
-                    }};
+                    ws.onopen = () => ws.send(payloads[0].data);
                     ws.onmessage = (e) => {{
                         results.push({{
                             size: payloads[idx].size,
@@ -159,4 +155,72 @@ def test_varying_payload_sizes(nginx_server):
             )
         print(f"\n  Payload sizes verified: {[s['size'] for s in parsed]}")
         browser.close()
+
+
+def test_corner_case_payloads(nginx_server):
+    """
+    Corner cases: empty, 1B, and boundary tests to ensure the extension
+    never breaks WebSocket regardless of message size.
+    """
+    from playwright.sync_api import sync_playwright
+
+    # sizes that stress boundaries: 0, 1, 125 (max 7-bit), 126-127 (16-bit boundary),
+    # 65535-65536 (16/64-bit boundary), then large
+    sizes = [0, 1, 125, 126, 127, 65535, 65536, 100_000, 500_000]
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        # Build JS payloads (empty string needs special handling)
+        items = []
+        for s in sizes:
+            if s == 0:
+                items.append('{size:0, data:""}')
+            else:
+                items.append(f'{{size:{s}, data:"A".repeat({s})}}')
+
+        js_sends = "const payloads = [" + ",".join(items) + "];"
+
+        result = page.evaluate(f"""
+            async () => {{
+                {js_sends}
+                const ws = new WebSocket('ws://127.0.0.1:8090/ws');
+                const results = [];
+                let idx = 0;
+
+                await new Promise((resolve, reject) => {{
+                    ws.onopen = () => ws.send(payloads[0].data);
+                    ws.onmessage = (e) => {{
+                        const expected = payloads[idx].data;
+                        results.push({{
+                            size: payloads[idx].size,
+                            len: e.data.length,
+                            ok: e.data === expected,
+                            sentLen: expected.length
+                        }});
+                        idx++;
+                        if (idx < payloads.length) {{
+                            ws.send(payloads[idx].data);
+                        }} else {{
+                            resolve(results);
+                        }}
+                    }};
+                    ws.onerror = (e) => reject(e.error?.message || 'ws error');
+                    setTimeout(() => reject('timeout'), 30000);
+                }});
+                return JSON.stringify(results);
+            }}
+        """)
+
+        import json
+        parsed = json.loads(result)
+        for item in parsed:
+            assert item["ok"], (
+                f"FAIL at size={item['size']}: "
+                f"sent {item['sentLen']}B, got {item['len']}B"
+            )
+        print(f"\n  Corner cases verified: sizes={[s['size'] for s in parsed]}")
+        browser.close()
+
 
