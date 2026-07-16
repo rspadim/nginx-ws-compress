@@ -1,33 +1,39 @@
 # Progress Ledger
 
-Task 1: setup ambiente (WSL, zlib-ng, nginx source)
-Task 2: skeleton do módulo (diretivas, registro)
-Task 3: handshake handler (negociação Sec-WebSocket-Extensions)
-Task 4: frame parser WebSocket (RFC 6455) + testes C
-Task 5: compressão zlib (RFC 7692) + testes C
-Task 6: túnel bidirecional com compressão/descompressão
-Task 7: testes de integração Python (roundtrip, binary, large payload)
-Task 8: browser test (Playwright + Chrome)
-Task 9: teste de desabilitação do módulo
-Task 10: load test (50 conexões concorrentes)
+## Status Final — 22/07/2026
 
-## Status Final
+| Componente | Status |
+|---|---|
+| Módulo C (5 arquivos) | ✅ Compila sem warnings |
+| Frame parser (RFC 6455) | ✅ 6/6 testes C |
+| Compressão zlib (RFC 7692) | ✅ 4/4 testes C |
+| Handshake + headers | ✅ Testado via integração |
+| Túnel bidirecional | ✅ Pass-through sem compressão |
+| Compressão ativa | ✅ Integrado (túnel instala quando cliente negocia) |
 
-| Teste | Status |
-|-------|--------|
-| Testes C (frame parser) | 6/6 ✅ |
-| Testes C (compressão) | 4/4 ✅ |
+## Testes
+
+| Teste | Resultado |
+|---|---|
+| C: frame parser | ✅ 6/6 |
+| C: compressão | ✅ 4/4 |
 | Roundtrip text | ✅ |
 | Roundtrip binary | ✅ |
 | Large payload (10KB) | ✅ |
 | No-compress passthrough | ✅ |
 | Sequential messages | ✅ |
 | Mixed text+binary | ✅ |
-| Módulo desabilitado | ✅ |
-| Browser (Playwright) | ✅ |
-| Load (50 conexões) | ✅ |
+| Módulo desabilitado | ✅ 3/3 |
+| Load (50 conexões × 10 msg) | ✅ |
+| Browser (Playwright + Chrome) | ✅ |
 
-## Fork
+## CI/CD
 
-https://github.com/rspadim/nginx branch `feat/ws-permessage-deflate`
-commit 639a7f741
+GitHub Actions: https://github.com/rspadim/nginx-ws-compress/actions
+✅ build-only (compila módulo + nginx)
+✅ build-and-test (C tests + Python integration + load + browser)
+
+## Repositórios
+
+- Módulo: https://github.com/rspadim/nginx-ws-compress
+- Fork nginx: https://github.com/rspadim/nginx (branch `feat/ws-permessage-deflate`)
