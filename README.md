@@ -1,7 +1,7 @@
 # nginx WebSocket per-message Deflate Module
 
 [![CI](https://github.com/rspadim/nginx-ws-compress/actions/workflows/ci.yml/badge.svg)](https://github.com/rspadim/nginx-ws-compress/actions/workflows/ci.yml)
-[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64%20%7C%20arm%20%7C%20ppc%20%7C%20s390x-blue)](https://nginx.org/en/#tested_os_and_platforms)
+[![Platforms](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows%20%7C%20arm64-blue)](https://nginx.org/en/#tested_os_and_platforms)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 
 **ngx_http_ws_deflate_module** — Dynamic nginx module that enables WebSocket
