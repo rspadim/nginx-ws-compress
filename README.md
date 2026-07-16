@@ -466,18 +466,6 @@ ngx_http_ws_deflate_module/
 
 ---
 
-## Known Limitations
-
-- **Large payloads**: Buffers are request-pool allocated. Very large messages
-  (>100KB) may cause connection resets. Increase `ws_deflate_chunk_size` or
-  implement streaming compression for production use.
-- **Per-frame allocation**: Each frame allocates temporary buffers from the
-  request pool without freeing until connection close. For long-lived
-  connections with thousands of frames, memory usage grows linearly. A
-  sub-pool or reusable scratch buffer optimization is planned.
-
----
-
 ## Platforms
 
 The module is written in portable C (no assembly) and compiles on **any
@@ -486,9 +474,9 @@ architecture nginx supports**. CI-tested:
 | OS | Arch | Status |
 |---|---|---|
 | Linux | amd64 | ✅ Full (build + C tests + Python + browser + load) |
-| Linux | arm64 | ✅ Build + C tests + Python |
+| Linux | arm64 | ✅ Full |
 | macOS | amd64 | ✅ Build + C tests |
-| Windows | amd64 | 🔄 Experimental |
+| Windows | amd64 | ✅ Build (static) |
 
 To build on any platform:
 
