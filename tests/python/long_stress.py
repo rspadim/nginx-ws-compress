@@ -78,9 +78,16 @@ async def report_loop(duration: float, mem_start: int):
 
 async def main():
     parser = argparse.ArgumentParser(description="Long stress test")
-    parser.add_argument("--duration", type=int, default=30, help="Duration in minutes")
-    parser.add_argument("--connections", type=int, default=5, help="Concurrent connections")
+    parser.add_argument("--duration", type=int, default=5, help="Duration in minutes (max 60)")
+    parser.add_argument("--connections", type=int, default=5, help="Concurrent connections (max 200)")
     args = parser.parse_args()
+
+    if args.duration < 1 or args.duration > 60:
+        print(f"ERROR: duration must be between 1 and 60 minutes (got {args.duration})")
+        sys.exit(1)
+    if args.connections < 1 or args.connections > 200:
+        print(f"ERROR: connections must be between 1 and 200 (got {args.connections})")
+        sys.exit(1)
 
     duration_s = args.duration * 60
     connections = args.connections

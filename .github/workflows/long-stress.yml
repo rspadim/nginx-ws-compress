@@ -4,15 +4,27 @@ on:
   workflow_dispatch:
     inputs:
       duration_minutes:
-        description: 'Test duration in minutes'
-        required: true
-        default: '30'
-        type: string
-      connections:
-        description: 'Number of concurrent connections'
+        description: 'Test duration in minutes (max 60)'
         required: true
         default: '5'
-        type: string
+        type: choice
+        options:
+          - '5'
+          - '10'
+          - '30'
+          - '60'
+      connections:
+        description: 'Number of concurrent connections (max 200)'
+        required: true
+        default: '10'
+        type: choice
+        options:
+          - '5'
+          - '10'
+          - '25'
+          - '50'
+          - '100'
+          - '200'
 
 env:
   NGINX_VERSION: release-1.31.3
