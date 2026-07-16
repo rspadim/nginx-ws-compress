@@ -74,7 +74,7 @@ static ngx_int_t ngx_http_ws_deflate_process_data(
     ngx_connection_t *src, ngx_connection_t *dst,
     ngx_buf_t *buf, ngx_flag_t from_upstream);
 static ngx_int_t ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data,
-    size_t len);
+    size_t len, ngx_pool_t *pool);
 
 
 ngx_int_t
@@ -164,14 +164,11 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
 
 /* --- Write helper: send data through a connection --- */
 static ngx_int_t
-ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data, size_t len)
+ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data, size_t len,
+    ngx_pool_t *pool)
 {
     ngx_buf_t    *b;
     ngx_chain_t   chain;
-    ngx_pool_t   *pool;
-
-    pool = c->pool ? c->pool : c->log->pool;
-    if (pool == NULL) return NGX_ERROR;
 
     b = ngx_create_temp_buf(pool, len);
     if (b == NULL) return NGX_ERROR;
@@ -350,7 +347,7 @@ ngx_http_ws_deflate_process_data(
     if (!tctx->client_deflate) {
         len = buf->last - buf->pos;
         if (len > 0) {
-            if (ngx_http_ws_deflate_write(dst, buf->pos, len) != NGX_OK) {
+            if (ngx_http_ws_deflate_write(dst, buf->pos, len, tctx->pool) != NGX_OK) {
                 return NGX_ERROR;
             }
             ngx_log_error(NGX_LOG_DEBUG, log, 0,
@@ -483,7 +480,7 @@ ngx_http_ws_deflate_process_data(
             if (ngx_ws_frame_serialize(&frame, out_buf, &out_len) != NGX_OK) {
                 return NGX_ERROR;
             }
-            if (ngx_http_ws_deflate_write(dst, out_buf, out_len) != NGX_OK) {
+            if (ngx_http_ws_deflate_write(dst, out_buf, out_len, tctx->pool) != NGX_OK) {
                 return NGX_ERROR;
             }
             return NGX_ERROR;  /* trigger close */
@@ -500,7 +497,7 @@ ngx_http_ws_deflate_process_data(
         if (ngx_ws_frame_serialize(&frame, out_buf, &out_len) != NGX_OK) {
             return NGX_ERROR;
         }
-        if (ngx_http_ws_deflate_write(dst, out_buf, out_len) != NGX_OK) {
+        if (ngx_http_ws_deflate_write(dst, out_buf, out_len, tctx->pool) != NGX_OK) {
             return NGX_ERROR;
         }
 
