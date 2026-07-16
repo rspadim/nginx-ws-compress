@@ -185,8 +185,36 @@ ngx_http_ws_deflate_status_handler(ngx_http_request_t *r)
         comp_ratio = 0;
     }
 
-    /* Pre-allocate buffer large enough for JSON */
-    buf = ngx_pnalloc(r->pool, 512);
+    /* Calculate latency percentiles from histogram */
+    ngx_int_t  lat_mean = 0, lat_p50 = 0, lat_p95 = 0, lat_p99 = 0;
+    ngx_int_t  lat_min = 0, lat_max = 0;
+    ngx_int_t  total = ngx_ws_deflate_latency_count;
+
+    if (total > 0) {
+        lat_mean = ngx_ws_deflate_latency_sum / total;
+        lat_min = (ngx_ws_deflate_latency_min == NGX_MAX_UINT32_VALUE)
+                  ? 0 : ngx_ws_deflate_latency_min;
+        lat_max = ngx_ws_deflate_latency_max;
+
+        /* Walk histogram to find percentiles */
+        ngx_int_t  cum = 0;
+        ngx_uint_t  b;
+        for (b = 0; b < NGX_WS_LATENCY_BUCKETS; b++) {
+            cum += ngx_ws_deflate_latency_histogram[b];
+            if (lat_p50 == 0 && cum >= total * 50 / 100) {
+                lat_p50 = ngx_ws_latency_limits[b];
+            }
+            if (lat_p95 == 0 && cum >= total * 95 / 100) {
+                lat_p95 = ngx_ws_latency_limits[b];
+            }
+            if (lat_p99 == 0 && cum >= total * 99 / 100) {
+                lat_p99 = ngx_ws_latency_limits[b];
+            }
+        }
+    }
+
+    /* Pre-allocate buffer large enough for JSON with latency fields */
+    buf = ngx_pnalloc(r->pool, 768);
     if (buf == NULL) return NGX_ERROR;
 
     u_char *p = ngx_sprintf(buf,
@@ -198,6 +226,14 @@ ngx_http_ws_deflate_status_handler(ngx_http_request_t *r)
         "    \"bytes_uncompressed\": %i,\n"
         "    \"bytes_compressed\": %i,\n"
         "    \"compression_ratio_pct\": %ui,\n"
+        "    \"latency_us\": {\n"
+        "      \"mean\": %i,\n"
+        "      \"min\": %i,\n"
+        "      \"max\": %i,\n"
+        "      \"p50\": %i,\n"
+        "      \"p95\": %i,\n"
+        "      \"p99\": %i\n"
+        "    },\n"
         "    \"status\": \"active\"\n"
         "  }\n"
         "}\n",
@@ -206,7 +242,8 @@ ngx_http_ws_deflate_status_handler(ngx_http_request_t *r)
         ngx_ws_deflate_frames_processed,
         ngx_ws_deflate_uncompressed_bytes,
         ngx_ws_deflate_compressed_bytes,
-        comp_ratio);
+        comp_ratio,
+        lat_mean, lat_min, lat_max, lat_p50, lat_p95, lat_p99);
 
     size_t len = p - buf;
 

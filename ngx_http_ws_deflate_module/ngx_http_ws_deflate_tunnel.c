@@ -3,7 +3,21 @@
 #include <ngx_http.h>
 #include <ngx_event.h>
 
+#include <sys/time.h>
+
 #include "ngx_http_ws_deflate_tunnel.h"
+
+
+/* Latency tracking (compile-time option, ON by default).
+ * To disable: add -DNGX_WS_DEFLATE_NO_LATENCY to CFLAGS.
+ * When enabled, each frame measures processing time in microseconds
+ * and maintains a histogram for P50/P95 estimation.
+ * Overhead: ~50ns per frame (gettimeofday syscall). */
+#ifndef NGX_WS_DEFLATE_NO_LATENCY
+#define NGX_WS_LATENCY_TRACK  1
+#else
+#define NGX_WS_LATENCY_TRACK  0
+#endif
 #include "ngx_http_ws_deflate_frame.h"
 #include "ngx_http_ws_deflate_compress.h"
 #include "ngx_http_ws_deflate_handshake.h"
@@ -15,6 +29,13 @@ ngx_int_t  ngx_ws_deflate_active_connections;
 ngx_int_t  ngx_ws_deflate_compressed_bytes;
 ngx_int_t  ngx_ws_deflate_uncompressed_bytes;
 ngx_int_t  ngx_ws_deflate_frames_processed;
+
+/* Global latency tracking (aggregated across all connections) */
+ngx_int_t  ngx_ws_deflate_latency_sum;
+ngx_int_t  ngx_ws_deflate_latency_min;
+ngx_int_t  ngx_ws_deflate_latency_max;
+ngx_int_t  ngx_ws_deflate_latency_count;
+ngx_int_t  ngx_ws_deflate_latency_histogram[NGX_WS_LATENCY_BUCKETS];
 
 
 /* Forward declarations */
@@ -85,6 +106,11 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
     tctx->conf = lcf;
     tctx->pool = r->pool;
     tctx->initialized = 1;
+
+    /* Initialize latency tracking */
+    tctx->latency_sum = 0;
+    tctx->latency_min = NGX_MAX_UINT32_VALUE;
+    tctx->latency_max = 0;
 
     ngx_ws_deflate_active_connections++;
 
@@ -426,6 +452,12 @@ ngx_http_ws_deflate_process_upstream_data(
         if (frame.opcode == NGX_WS_OPCODE_TEXT
             || frame.opcode == NGX_WS_OPCODE_BINARY)
         {
+            struct timeval  tv_start, tv_end;
+
+            if (NGX_WS_LATENCY_TRACK) {
+                gettimeofday(&tv_start, NULL);
+            }
+
             size_t  need = frame.payload_len + 64;
             u_char *comp = (need <= NGX_WS_DEFLATE_BUF_SIZE)
                            ? tctx->tmp_compress
@@ -440,6 +472,31 @@ ngx_http_ws_deflate_process_upstream_data(
                 ngx_log_error(NGX_LOG_ERR, log, 0,
                               "ws_deflate: compression failed");
                 return NGX_ERROR;
+            }
+
+            if (NGX_WS_LATENCY_TRACK) {
+                gettimeofday(&tv_end, NULL);
+                ngx_int_t  elapsed = (ngx_int_t)(
+                    (tv_end.tv_sec - tv_start.tv_sec) * 1000000
+                    + (tv_end.tv_usec - tv_start.tv_usec));
+                if (elapsed < 0) elapsed = 0;
+
+                /* Update global histogram and stats */
+                ngx_uint_t  bucket;
+                for (bucket = 0; bucket < NGX_WS_LATENCY_BUCKETS; bucket++) {
+                    if (elapsed <= (ngx_int_t) ngx_ws_latency_limits[bucket]) {
+                        ngx_ws_deflate_latency_histogram[bucket]++;
+                        break;
+                    }
+                }
+                ngx_ws_deflate_latency_sum += elapsed;
+                ngx_ws_deflate_latency_count++;
+                if (elapsed < ngx_ws_deflate_latency_min) {
+                    ngx_ws_deflate_latency_min = elapsed;
+                }
+                if (elapsed > ngx_ws_deflate_latency_max) {
+                    ngx_ws_deflate_latency_max = elapsed;
+                }
             }
 
             ngx_log_error(NGX_LOG_DEBUG, log, 0,

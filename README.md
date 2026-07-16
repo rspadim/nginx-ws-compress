@@ -438,6 +438,12 @@ location /ws_deflate_status {
 | `bytes_uncompressed` | Original bytes before compression |
 | `bytes_compressed` | Bytes after compression |
 | `compression_ratio_pct` | Space savings percent (higher = better) |
+| `latency_us.mean` | Average processing time per frame (microseconds) |
+| `latency_us.min` | Minimum processing time observed |
+| `latency_us.max` | Maximum processing time observed |
+| `latency_us.p50` | Median processing time (50th percentile) |
+| `latency_us.p95` | 95th percentile processing time |
+| `latency_us.p99` | 99th percentile processing time |
 | `status` | Always `"active"` when module is loaded |
 
 If `compression_ratio_pct` is 0 after active use, compression is not
