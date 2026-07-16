@@ -129,38 +129,20 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     ngx_ws_deflate_total_connections++;
 
     if (ctx != NULL && ctx->client_deflate) {
-        /* Add Sec-WebSocket-Extensions to response so client knows
-         * permessage-deflate was accepted */
-        h = ngx_list_push(&r->headers_out.headers);
-        if (h == NULL) {
-            return NGX_ERROR;
-        }
-        h->hash = 1;
-        ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
-        ngx_str_set(&h->value, "permessage-deflate");
-
-        /* Add diagnostic header */
+        /* Diagnostic header only — Sec-WebSocket-Extensions and tunnel
+         * install are disabled until the event handler lifecycle issue
+         * with the proxy module is fully resolved. */
         h = ngx_list_push(&r->headers_out.headers);
         if (h == NULL) {
             return NGX_ERROR;
         }
         h->hash = 1;
         ngx_str_set(&h->key, "X-WS-Deflate");
-        ngx_str_set(&h->value, "active");
+        ngx_str_set(&h->value, "detected");
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: negotiated permessage-deflate with client");
-    }
-
-    /* Install compression tunnel by replacing upstream event handlers.
-     * This approach keeps ngx_http_upstream_handler as the connection
-     * event handler (set by proxy module) and only replaces the
-     * u->read_event_handler / u->write_event_handler function pointers. */
-    if (ctx != NULL && ctx->client_deflate) {
-        if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "ws_deflate: tunnel install failed");
-        }
+                      "ws_deflate: client requested permessage-deflate "
+                      "(tunnel disabled)");
     }
 
     return NGX_OK;
