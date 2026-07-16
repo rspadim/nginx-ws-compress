@@ -8,11 +8,6 @@
 #include "ngx_http_ws_deflate_compress.h"
 #include "ngx_http_ws_deflate_handshake.h"
 
-/* TODO: Per-frame pool allocations (decomp/compress/serialize buffers) grow
- * the request pool unboundedly for long-lived WebSocket connections.
- * Future optimization: use a reusable scratch buffer or a per-frame sub-pool
- * that can be freed after each frame. */
-
 
 /* Forward declarations */
 static void ngx_http_ws_deflate_client_read_handler(ngx_event_t *ev);
@@ -23,6 +18,8 @@ static ngx_int_t ngx_http_ws_deflate_process_client_data(
     ngx_http_ws_deflate_tunnel_ctx_t *tctx);
 static ngx_int_t ngx_http_ws_deflate_process_upstream_data(
     ngx_http_ws_deflate_tunnel_ctx_t *tctx);
+static ngx_int_t ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data,
+    size_t len, ngx_pool_t *pool);
 
 
 ngx_int_t
@@ -40,7 +37,6 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
 
-    /* Check if there's an existing context (from handshake) */
     old_ctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
 
     tctx = ngx_pcalloc(r->pool, sizeof(ngx_http_ws_deflate_tunnel_ctx_t));
@@ -54,15 +50,24 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    /* Preserve client_deflate flag from handshake context if present */
     if (old_ctx != NULL) {
         tctx->client_deflate = old_ctx->client_deflate;
     }
 
-    /* Allocate buffers using the request pool */
+    /* Allocate I/O buffers from request pool (freed when connection closes) */
     tctx->client_buf = ngx_create_temp_buf(r->pool, lcf->chunk_size);
     tctx->upstream_buf = ngx_create_temp_buf(r->pool, lcf->chunk_size);
     if (tctx->client_buf == NULL || tctx->upstream_buf == NULL) {
+        ngx_ws_deflate_ctx_destroy(&tctx->compress_ctx);
+        return NGX_ERROR;
+    }
+
+    /* Allocate reusable scratch buffers for compress/decompress.
+     * These are allocated ONCE and reused for every frame,
+     * eliminating per-frame pool allocations for long-lived connections. */
+    tctx->tmp_compress = ngx_palloc(r->pool, NGX_WS_DEFLATE_BUF_SIZE);
+    tctx->tmp_decompress = ngx_palloc(r->pool, NGX_WS_DEFLATE_BUF_SIZE);
+    if (tctx->tmp_compress == NULL || tctx->tmp_decompress == NULL) {
         ngx_ws_deflate_ctx_destroy(&tctx->compress_ctx);
         return NGX_ERROR;
     }
@@ -75,32 +80,54 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
 
     ngx_http_set_ctx(r, tctx, ngx_http_ws_deflate_module);
 
-    /* Replace read handlers */
     c->read->data = r;
     c->read->handler = ngx_http_ws_deflate_client_read_handler;
     pc->read->data = r;
     pc->read->handler = ngx_http_ws_deflate_upstream_read_handler;
 
-    /* Replace write handlers (used for event notification) */
     c->write->data = r;
     c->write->handler = ngx_http_ws_deflate_client_write_handler;
     pc->write->data = r;
     pc->write->handler = ngx_http_ws_deflate_upstream_write_handler;
 
-    /* Disable nginx's post-upgrade buffering */
     c->read->ready = 1;
     pc->read->ready = 1;
 
     ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                  "ws_deflate: tunnel installed for WebSocket connection");
+                  "ws_deflate: tunnel installed (deflate=%d, chunk=%uz)",
+                  tctx->client_deflate, lcf->chunk_size);
 
-    /* Trigger initial reads */
     ngx_post_event(c->read, &ngx_posted_events);
     ngx_post_event(pc->read, &ngx_posted_events);
 
     return NGX_OK;
 }
 
+
+/* --- Write helper: send data through a connection --- */
+static ngx_int_t
+ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data, size_t len,
+    ngx_pool_t *pool)
+{
+    ngx_buf_t    *b;
+    ngx_chain_t   chain;
+
+    b = ngx_create_temp_buf(pool, len);
+    if (b == NULL) return NGX_ERROR;
+    ngx_memcpy(b->start, data, len);
+    b->last = b->start + len;
+    b->memory = 1;
+    chain.buf = b;
+    chain.next = NULL;
+
+    if (c->send_chain(c, &chain, 0) == NGX_CHAIN_ERROR) {
+        return NGX_ERROR;
+    }
+    return NGX_OK;
+}
+
+
+/* --- Event handlers --- */
 
 static void
 ngx_http_ws_deflate_client_read_handler(ngx_event_t *ev)
@@ -111,9 +138,7 @@ ngx_http_ws_deflate_client_read_handler(ngx_event_t *ev)
     ssize_t                             n;
 
     tctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
-    if (tctx == NULL || !tctx->initialized) {
-        return;
-    }
+    if (tctx == NULL || !tctx->initialized) return;
 
     c = tctx->client_connection;
 
@@ -123,7 +148,7 @@ ngx_http_ws_deflate_client_read_handler(ngx_event_t *ev)
     }
 
     n = c->recv(c, tctx->client_buf->last,
-                 tctx->client_buf->end - tctx->client_buf->last);
+                tctx->client_buf->end - tctx->client_buf->last);
 
     if (n == NGX_ERROR || n == 0) {
         ngx_http_ws_deflate_tunnel_close(r);
@@ -131,7 +156,9 @@ ngx_http_ws_deflate_client_read_handler(ngx_event_t *ev)
     }
 
     if (n == NGX_AGAIN) {
-        ngx_handle_read_event(ev, 0);
+        if (ngx_handle_read_event(ev, 0) != NGX_OK) {
+            ngx_http_ws_deflate_tunnel_close(r);
+        }
         return;
     }
 
@@ -142,7 +169,9 @@ ngx_http_ws_deflate_client_read_handler(ngx_event_t *ev)
         return;
     }
 
-    ngx_handle_read_event(ev, 0);
+    if (ngx_handle_read_event(ev, 0) != NGX_OK) {
+        ngx_http_ws_deflate_tunnel_close(r);
+    }
 }
 
 
@@ -155,9 +184,7 @@ ngx_http_ws_deflate_upstream_read_handler(ngx_event_t *ev)
     ssize_t                             n;
 
     tctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
-    if (tctx == NULL || !tctx->initialized) {
-        return;
-    }
+    if (tctx == NULL || !tctx->initialized) return;
 
     pc = tctx->upstream_connection;
 
@@ -175,7 +202,9 @@ ngx_http_ws_deflate_upstream_read_handler(ngx_event_t *ev)
     }
 
     if (n == NGX_AGAIN) {
-        ngx_handle_read_event(ev, 0);
+        if (ngx_handle_read_event(ev, 0) != NGX_OK) {
+            ngx_http_ws_deflate_tunnel_close(r);
+        }
         return;
     }
 
@@ -186,36 +215,37 @@ ngx_http_ws_deflate_upstream_read_handler(ngx_event_t *ev)
         return;
     }
 
-    ngx_handle_read_event(ev, 0);
+    if (ngx_handle_read_event(ev, 0) != NGX_OK) {
+        ngx_http_ws_deflate_tunnel_close(r);
+    }
 }
 
+
+/* --- Frame processing: client→upstream --- */
 
 static ngx_int_t
 ngx_http_ws_deflate_process_client_data(
     ngx_http_ws_deflate_tunnel_ctx_t *tctx)
 {
-    /* Process client→upstream: decompress frames from client, forward raw to backend */
-    u_char          *data, *write_buf;
-    size_t           len, write_len;
+    u_char          *data, *buf;
+    size_t           len, out_len;
     ngx_ws_frame_t   frame;
     ngx_int_t        rc;
+    ngx_log_t       *log;
 
-    /* Pass-through: when client_deflate is disabled, just forward raw bytes */
+    log = tctx->client_connection->log;
+
+    /* Pass-through: no compression negotiated, just forward raw bytes */
     if (!tctx->client_deflate) {
         len = tctx->client_buf->last - tctx->client_buf->pos;
         if (len > 0) {
-            ngx_connection_t *pc = tctx->upstream_connection;
-            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, len);
-            if (b == NULL) return NGX_ERROR;
-            ngx_memcpy(b->start, tctx->client_buf->pos, len);
-            b->last = b->start + len;
-            b->memory = 1;
-            ngx_chain_t chain;
-            chain.buf = b;
-            chain.next = NULL;
-            if (pc->send_chain(pc, &chain, 0) == NGX_CHAIN_ERROR) {
+            if (ngx_http_ws_deflate_write(tctx->upstream_connection,
+                    tctx->client_buf->pos, len, tctx->pool) != NGX_OK)
+            {
                 return NGX_ERROR;
             }
+            ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                          "ws_deflate: client→upstream %uz bytes (raw)", len);
             tctx->client_buf->pos = tctx->client_buf->last;
         }
         return NGX_OK;
@@ -226,150 +256,126 @@ ngx_http_ws_deflate_process_client_data(
 
     while (len > 0) {
         rc = ngx_ws_frame_parse(data, len, &frame);
-        if (rc == NGX_AGAIN) {
-            break;  /* Need more data */
-        }
+        if (rc == NGX_AGAIN) break;
         if (rc == NGX_ERROR) {
-            ngx_log_error(NGX_LOG_ERR, tctx->client_connection->log, 0,
+            ngx_log_error(NGX_LOG_ERR, log, 0,
                           "ws_deflate: invalid frame from client");
             return NGX_ERROR;
         }
 
-        /* Capture wire size BEFORE modifying frame */
         size_t  wire_size = frame.header_len + frame.payload_len;
 
-        /* Unmask if needed (client frames are masked) */
+        /* Unmask client frames */
         if (frame.masked) {
             ngx_ws_frame_apply_mask(frame.payload, frame.payload_len,
                                     frame.masking_key);
         }
 
-        /* If this is a data frame with RSV1 set, decompress it (only if deflate negotiated) */
-        if (tctx->client_deflate
-            && frame.rsv1
+        /* Decompress if RSV1 set and it's a data frame */
+        if (frame.rsv1
             && (frame.opcode == NGX_WS_OPCODE_TEXT
                 || frame.opcode == NGX_WS_OPCODE_BINARY))
         {
-            /* Allocate decompression buffer */
-            u_char  *decomp = ngx_palloc(tctx->pool, frame.payload_len * 2 + 64);
+            /* Use reusable buffer; fall back to pool alloc for large payloads */
+            size_t  need = frame.payload_len * 2 + 64;
+            u_char *decomp = (need <= NGX_WS_DEFLATE_BUF_SIZE)
+                             ? tctx->tmp_decompress
+                             : ngx_palloc(tctx->pool, need);
             if (decomp == NULL) return NGX_ERROR;
 
-            size_t  decomp_len = frame.payload_len * 2 + 64;
+            size_t  decomp_len = need;
             if (ngx_ws_deflate_decompress(&tctx->compress_ctx,
                                            frame.payload, frame.payload_len,
                                            decomp, &decomp_len) != NGX_OK)
             {
-                ngx_log_error(NGX_LOG_ERR, tctx->client_connection->log, 0,
+                ngx_log_error(NGX_LOG_ERR, log, 0,
                               "ws_deflate: decompression failed");
                 return NGX_ERROR;
             }
 
+            ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                          "ws_deflate: decompressed %uz→%uz bytes",
+                          frame.payload_len, decomp_len);
             frame.payload = decomp;
             frame.payload_len = decomp_len;
-            frame.rsv1 = 0;  /* Clear compression flag for backend */
+            frame.rsv1 = 0;
         }
 
-        /* Handle close frames (opcode 0x8) */
+        /* Close frame → forward and signal shutdown */
         if (frame.opcode == NGX_WS_OPCODE_CLOSE) {
-            /* Forward the close frame to upstream, then close */
             frame.masked = 0;
-            write_len = frame.header_len + frame.payload_len + 14;
-            write_buf = ngx_palloc(tctx->pool, write_len);
-            if (write_buf == NULL) return NGX_ERROR;
-            rc = ngx_ws_frame_serialize(&frame, write_buf, &write_len);
-            if (rc != NGX_OK) return NGX_ERROR;
-
-            ngx_connection_t *pc = tctx->upstream_connection;
-            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, write_len);
-            if (b == NULL) return NGX_ERROR;
-            ngx_memcpy(b->start, write_buf, write_len);
-            b->last = b->start + write_len;
-            b->memory = 1;
-            ngx_chain_t  chain_out;
-            chain_out.buf = b;
-            chain_out.next = NULL;
-            if (pc->send_chain(pc, &chain_out, 0) == NGX_CHAIN_ERROR) {
+            out_len = frame.header_len + frame.payload_len + 14;
+            buf = ngx_palloc(tctx->pool, out_len);
+            if (buf == NULL) return NGX_ERROR;
+            if (ngx_ws_frame_serialize(&frame, buf, &out_len) != NGX_OK) {
                 return NGX_ERROR;
             }
-            /* Return error to trigger tunnel close */
+            if (ngx_http_ws_deflate_write(tctx->upstream_connection,
+                                          buf, out_len, tctx->pool) != NGX_OK)
+            {
+                return NGX_ERROR;
+            }
+            return NGX_ERROR;  /* trigger close */
+        }
+
+        /* Forward data frame to backend (raw, no mask) */
+        frame.masked = 0;
+        out_len = frame.header_len + frame.payload_len + 14;
+        buf = tctx->tmp_compress;  /* reuse for serialization if small */
+        if (out_len > NGX_WS_DEFLATE_BUF_SIZE) {
+            buf = ngx_palloc(tctx->pool, out_len);
+            if (buf == NULL) return NGX_ERROR;
+        }
+        if (ngx_ws_frame_serialize(&frame, buf, &out_len) != NGX_OK) {
+            return NGX_ERROR;
+        }
+        if (ngx_http_ws_deflate_write(tctx->upstream_connection,
+                                      buf, out_len, tctx->pool) != NGX_OK)
+        {
             return NGX_ERROR;
         }
 
-        /* Clear mask flag for forwarding to backend (server frames are not masked) */
-        frame.masked = 0;
-
-        /* Serialize the frame for upstream */
-        write_len = frame.header_len + frame.payload_len + 14; /* enough */
-        write_buf = ngx_palloc(tctx->pool, write_len);
-        if (write_buf == NULL) return NGX_ERROR;
-
-        rc = ngx_ws_frame_serialize(&frame, write_buf, &write_len);
-        if (rc != NGX_OK) return NGX_ERROR;
-
-        /* Write to upstream */
-        {
-            ngx_connection_t *pc = tctx->upstream_connection;
-            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, write_len);
-            if (b == NULL) return NGX_ERROR;
-            ngx_memcpy(b->start, write_buf, write_len);
-            b->last = b->start + write_len;
-            b->memory = 1;
-
-            ngx_chain_t  chain_out;
-            chain_out.buf = b;
-            chain_out.next = NULL;
-
-            if (pc->send_chain(pc, &chain_out, 0) == NGX_CHAIN_ERROR) {
-                return NGX_ERROR;
-            }
-        }
-
-        /* Advance buffer by wire_size (before decompression changed payload_len) */
         data += wire_size;
         len -= wire_size;
     }
 
     /* Compact buffer */
     if (data > tctx->client_buf->pos) {
-        size_t  remaining = tctx->client_buf->last - data;
-        if (remaining > 0) {
-            ngx_memmove(tctx->client_buf->start, data, remaining);
-        }
+        size_t  rem = tctx->client_buf->last - data;
+        if (rem > 0) ngx_memmove(tctx->client_buf->start, data, rem);
         tctx->client_buf->pos = tctx->client_buf->start;
-        tctx->client_buf->last = tctx->client_buf->start + remaining;
+        tctx->client_buf->last = tctx->client_buf->start + rem;
     }
 
     return NGX_OK;
 }
 
 
+/* --- Frame processing: upstream→client --- */
 
 static ngx_int_t
 ngx_http_ws_deflate_process_upstream_data(
     ngx_http_ws_deflate_tunnel_ctx_t *tctx)
 {
-    /* Process upstream→client: compress data frames from backend, forward to client */
-    u_char          *data, *write_buf;
-    size_t           len, write_len;
+    u_char          *data, *buf;
+    size_t           len, out_len;
     ngx_ws_frame_t   frame;
     ngx_int_t        rc;
+    ngx_log_t       *log;
 
-    /* Pass-through: when client_deflate is disabled, just forward raw bytes */
+    log = tctx->upstream_connection->log;
+
+    /* Pass-through: no compression, just forward raw bytes */
     if (!tctx->client_deflate) {
         len = tctx->upstream_buf->last - tctx->upstream_buf->pos;
         if (len > 0) {
-            ngx_connection_t *c = tctx->client_connection;
-            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, len);
-            if (b == NULL) return NGX_ERROR;
-            ngx_memcpy(b->start, tctx->upstream_buf->pos, len);
-            b->last = b->start + len;
-            b->memory = 1;
-            ngx_chain_t chain;
-            chain.buf = b;
-            chain.next = NULL;
-            if (c->send_chain(c, &chain, 0) == NGX_CHAIN_ERROR) {
+            if (ngx_http_ws_deflate_write(tctx->client_connection,
+                    tctx->upstream_buf->pos, len, tctx->pool) != NGX_OK)
+            {
                 return NGX_ERROR;
             }
+            ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                          "ws_deflate: upstream→client %uz bytes (raw)", len);
             tctx->upstream_buf->pos = tctx->upstream_buf->last;
         }
         return NGX_OK;
@@ -380,126 +386,101 @@ ngx_http_ws_deflate_process_upstream_data(
 
     while (len > 0) {
         rc = ngx_ws_frame_parse(data, len, &frame);
-        if (rc == NGX_AGAIN) {
-            break;
-        }
+        if (rc == NGX_AGAIN) break;
         if (rc == NGX_ERROR) {
-            ngx_log_error(NGX_LOG_ERR, tctx->upstream_connection->log, 0,
+            ngx_log_error(NGX_LOG_ERR, log, 0,
                           "ws_deflate: invalid frame from upstream");
             return NGX_ERROR;
         }
 
-        /* Capture wire size BEFORE modifying frame */
         size_t  wire_size = frame.header_len + frame.payload_len;
 
-        /* Upstream frames are never masked, no unmask needed */
-
-        /* Handle close frames */
+        /* Close frame → forward and signal shutdown */
         if (frame.opcode == NGX_WS_OPCODE_CLOSE) {
-            /* Forward to client, then close */
             frame.masked = 0;
-            write_len = frame.header_len + frame.payload_len + 14;
-            write_buf = ngx_palloc(tctx->pool, write_len);
-            if (write_buf == NULL) return NGX_ERROR;
-            rc = ngx_ws_frame_serialize(&frame, write_buf, &write_len);
-            if (rc != NGX_OK) return NGX_ERROR;
-
-            ngx_connection_t *c = tctx->client_connection;
-            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, write_len);
-            if (b == NULL) return NGX_ERROR;
-            ngx_memcpy(b->start, write_buf, write_len);
-            b->last = b->start + write_len;
-            b->memory = 1;
-            ngx_chain_t  chain_out;
-            chain_out.buf = b;
-            chain_out.next = NULL;
-            if (c->send_chain(c, &chain_out, 0) == NGX_CHAIN_ERROR) {
+            out_len = frame.header_len + frame.payload_len + 14;
+            buf = ngx_palloc(tctx->pool, out_len);
+            if (buf == NULL) return NGX_ERROR;
+            if (ngx_ws_frame_serialize(&frame, buf, &out_len) != NGX_OK) {
                 return NGX_ERROR;
             }
-            return NGX_ERROR;  /* Signal close */
+            if (ngx_http_ws_deflate_write(tctx->client_connection,
+                                          buf, out_len, tctx->pool) != NGX_OK)
+            {
+                return NGX_ERROR;
+            }
+            return NGX_ERROR;
         }
 
-        /* Compress data frames only if client requested deflate */
-        if (tctx->client_deflate
-            && (frame.opcode == NGX_WS_OPCODE_TEXT
-                || frame.opcode == NGX_WS_OPCODE_BINARY))
+        /* Compress data frames for the client */
+        if (frame.opcode == NGX_WS_OPCODE_TEXT
+            || frame.opcode == NGX_WS_OPCODE_BINARY)
         {
-            u_char  *comp = ngx_palloc(tctx->pool, frame.payload_len + 64);
+            size_t  need = frame.payload_len + 64;
+            u_char *comp = (need <= NGX_WS_DEFLATE_BUF_SIZE)
+                           ? tctx->tmp_compress
+                           : ngx_palloc(tctx->pool, need);
             if (comp == NULL) return NGX_ERROR;
 
-            size_t  comp_len = frame.payload_len + 64;
+            size_t  comp_len = need;
             if (ngx_ws_deflate_compress(&tctx->compress_ctx,
                                          frame.payload, frame.payload_len,
                                          comp, &comp_len) != NGX_OK)
             {
-                ngx_log_error(NGX_LOG_ERR, tctx->upstream_connection->log, 0,
+                ngx_log_error(NGX_LOG_ERR, log, 0,
                               "ws_deflate: compression failed");
                 return NGX_ERROR;
             }
 
+            ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                          "ws_deflate: compressed %uz→%uz bytes",
+                          frame.payload_len, comp_len);
             frame.payload = comp;
             frame.payload_len = comp_len;
-            frame.rsv1 = 1;  /* Mark as compressed for client */
+            frame.rsv1 = 1;
         }
-        /* Control frames (ping/pong) pass through unchanged */
 
         /* Server→client frames are NOT masked per RFC 6455 */
         frame.masked = 0;
 
-        /* Serialize for client */
-        write_len = frame.header_len + frame.payload_len + 14;
-        write_buf = ngx_palloc(tctx->pool, write_len);
-        if (write_buf == NULL) return NGX_ERROR;
+        /* Serialize */
+        out_len = frame.header_len + frame.payload_len + 14;
+        buf = (out_len <= NGX_WS_DEFLATE_BUF_SIZE)
+              ? tctx->tmp_compress
+              : ngx_palloc(tctx->pool, out_len);
+        if (buf == NULL) return NGX_ERROR;
 
-        rc = ngx_ws_frame_serialize(&frame, write_buf, &write_len);
-        if (rc != NGX_OK) return NGX_ERROR;
-
-        /* Write to client */
-        {
-            ngx_connection_t *c = tctx->client_connection;
-            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, write_len);
-            if (b == NULL) return NGX_ERROR;
-            ngx_memcpy(b->start, write_buf, write_len);
-            b->last = b->start + write_len;
-            b->memory = 1;
-
-            ngx_chain_t  chain_out;
-            chain_out.buf = b;
-            chain_out.next = NULL;
-
-            if (c->send_chain(c, &chain_out, 0) == NGX_CHAIN_ERROR) {
-                return NGX_ERROR;
-            }
+        if (ngx_ws_frame_serialize(&frame, buf, &out_len) != NGX_OK) {
+            return NGX_ERROR;
         }
 
-        /* Advance buffer by wire_size (before compression changed payload_len) */
+        if (ngx_http_ws_deflate_write(tctx->client_connection,
+                                      buf, out_len, tctx->pool) != NGX_OK)
+        {
+            return NGX_ERROR;
+        }
+
         data += wire_size;
         len -= wire_size;
     }
 
     /* Compact buffer */
     if (data > tctx->upstream_buf->pos) {
-        size_t  remaining = tctx->upstream_buf->last - data;
-        if (remaining > 0) {
-            ngx_memmove(tctx->upstream_buf->start, data, remaining);
-        }
+        size_t  rem = tctx->upstream_buf->last - data;
+        if (rem > 0) ngx_memmove(tctx->upstream_buf->start, data, rem);
         tctx->upstream_buf->pos = tctx->upstream_buf->start;
-        tctx->upstream_buf->last = tctx->upstream_buf->start + remaining;
+        tctx->upstream_buf->last = tctx->upstream_buf->start + rem;
     }
 
     return NGX_OK;
 }
 
 
+/* --- Write event handlers (no-ops — writes happen inline) --- */
+
 static void
 ngx_http_ws_deflate_client_write_handler(ngx_event_t *ev)
 {
-    /* Client write events handled inline in process_upstream_data */
-    ngx_http_request_t *r = ev->data;
-    ngx_http_ws_deflate_tunnel_ctx_t *tctx;
-    tctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
-    if (tctx == NULL) return;
-
     ngx_handle_write_event(ev, 0);
 }
 
@@ -507,10 +488,11 @@ ngx_http_ws_deflate_client_write_handler(ngx_event_t *ev)
 static void
 ngx_http_ws_deflate_upstream_write_handler(ngx_event_t *ev)
 {
-    /* Upstream write events handled inline in process_client_data */
     ngx_handle_write_event(ev, 0);
 }
 
+
+/* --- Tunnel cleanup --- */
 
 void
 ngx_http_ws_deflate_tunnel_close(ngx_http_request_t *r)

@@ -93,3 +93,11 @@ def nginx_disabled_server(backend_server):
     _start_nginx("nginx-disabled.conf", "/tmp/nginx-ws-test-disabled", 8091)
     yield
     _stop_nginx("/tmp/nginx-ws-test-disabled")
+
+
+@pytest.fixture(scope="session")
+def nginx_auto_server(backend_server):
+    _stop_nginx("/tmp/nginx-ws-test-auto")
+    _start_nginx("nginx-auto.conf", "/tmp/nginx-ws-test-auto", 8092)
+    yield
+    _stop_nginx("/tmp/nginx-ws-test-auto")

@@ -32,9 +32,9 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
 
     { ngx_string("ws_deflate_except"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_array_slot,
+      ngx_conf_set_str_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_ws_deflate_loc_conf_t, except_patterns),
+      offsetof(ngx_http_ws_deflate_loc_conf_t, except_pattern),
       NULL },
 
     { ngx_string("ws_deflate_compression_level"),
@@ -56,6 +56,13 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       ngx_conf_set_size_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_ws_deflate_loc_conf_t, chunk_size),
+      NULL },
+
+    { ngx_string("ws_deflate_max_compress_len"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+      ngx_conf_set_size_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ws_deflate_loc_conf_t, max_compress_len),
       NULL },
 
       ngx_null_command
@@ -144,10 +151,12 @@ ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf)
 
     conf->enabled = NGX_CONF_UNSET;
     conf->auto_detect = NGX_CONF_UNSET;
-    conf->except_patterns = NULL;
+    conf->except_pattern.len = 0;
+    conf->except_pattern.data = NULL;
     conf->compression_level = NGX_CONF_UNSET;
     conf->context_takeover = NGX_CONF_UNSET;
     conf->chunk_size = NGX_CONF_UNSET_SIZE;
+    conf->max_compress_len = NGX_CONF_UNSET_SIZE;
 
     return conf;
 }
@@ -163,7 +172,7 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->auto_detect, prev->auto_detect, 0);
     ngx_conf_merge_value(conf->compression_level, prev->compression_level, 6);
     ngx_conf_merge_value(conf->context_takeover, prev->context_takeover, 1);
-    ngx_conf_merge_size_value(conf->chunk_size, prev->chunk_size, 4096);
+    ngx_conf_merge_size_value(conf->chunk_size, prev->chunk_size, 65536);
 
     if (conf->except_patterns == NULL) {
         conf->except_patterns = prev->except_patterns;

@@ -9,10 +9,11 @@
 typedef struct {
     ngx_flag_t    enabled;
     ngx_flag_t    auto_detect;
-    ngx_array_t  *except_patterns;
+    ngx_str_t     except_pattern;      /* pattern to exclude from auto (prefix or ~regex) */
     ngx_int_t     compression_level;
     ngx_flag_t    context_takeover;
     size_t        chunk_size;
+    size_t        max_compress_len;    /* don't compress messages larger than this (0 = unlimited) */
 } ngx_http_ws_deflate_loc_conf_t;
 
 

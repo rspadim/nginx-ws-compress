@@ -1,4 +1,9 @@
 tests/python/venv/
 tests/python/__pycache__/
 *.pyc
+__pycache__/
 .superpowers/sdd/*.diff
+*.so
+test_runner
+%zu
+tests/c/test_runner

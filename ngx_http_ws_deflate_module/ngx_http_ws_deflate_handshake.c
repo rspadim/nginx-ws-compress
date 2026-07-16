@@ -105,7 +105,12 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 
         h->hash = 1;
         ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
-        ngx_str_set(&h->value, "permessage-deflate");
+        /* Respond with supported parameters per RFC 7692 */
+        ngx_str_set(&h->value,
+            "permessage-deflate; client_max_window_bits=15; server_max_window_bits=15");
+
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: negotiated permessage-deflate with client");
     }
 
     /* Install the tunnel to intercept WebSocket frames.

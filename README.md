@@ -197,9 +197,9 @@ http {
 
 ---
 
-## Exemplos de Configuração
+## Configuration Examples
 
-### 1. Mínimo — só ativar compressão
+### 1. Minimal — just enable compression
 
 ```nginx
 load_module modules/ngx_http_ws_deflate_module.so;
@@ -213,13 +213,13 @@ http {
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
-            ws_deflate on;                   # só isso já basta
+            ws_deflate on;                   # that's all you need
         }
     }
 }
 ```
 
-### 2. Vários endpoints com compressão diferentes
+### 2. Multiple endpoints with different compression levels
 
 ```nginx
 load_module modules/ngx_http_ws_deflate_module.so;
@@ -232,7 +232,7 @@ http {
     server {
         listen 80;
 
-        # API crítica: máxima compressão (mais CPU)
+        # Critical API: maximum compression (more CPU)
         location /api/ws/ {
             proxy_pass http://prod_api;
             proxy_http_version 1.1;
@@ -245,7 +245,7 @@ http {
             ws_deflate_context_takeover on;
         }
 
-        # Chat em tempo real: prioridade é latência
+        # Real-time chat: latency first
         location /chat/ws/ {
             proxy_pass http://chat_api;
             proxy_http_version 1.1;
@@ -254,11 +254,11 @@ http {
             proxy_set_header Host $host;
 
             ws_deflate on;
-            ws_deflate_compression_level 1;      # compressão rápida
-            ws_deflate_context_takeover off;      # menos memória
+            ws_deflate_compression_level 1;      # fast compression
+            ws_deflate_context_takeover off;      # less memory
         }
 
-        # IoT: dados binários pequenos, compressão quase não ajuda
+        # IoT: small binary payloads, compression barely helps
         location /iot/ws/ {
             proxy_pass http://iot_api;
             proxy_http_version 1.1;
@@ -273,18 +273,18 @@ http {
 }
 ```
 
-### 3. Auto-detect + exceções
+### 3. Auto-detect + exceptions
 
-Útil quando você tem muitos endpoints WebSocket e não quer configurar um por um:
+Useful when you have many WebSocket endpoints and don't want to configure each one:
 
 ```nginx
 load_module modules/ngx_http_ws_deflate_module.so;
 
 http {
-    # Liga a compressão para QUALQUER WebSocket
+    # Enable compression for ANY WebSocket connection
     ws_deflate_auto on;
 
-    # Mas desliga para alguns paths específicos
+    # But disable it for specific paths
     ws_deflate_except /healthcheck/;
     ws_deflate_except /legacy/;
     ws_deflate_except ~ /no-compress/;
@@ -292,8 +292,8 @@ http {
     server {
         listen 80;
 
-        # Esses locations NÃO precisam de ws_deflate on —
-        # o modo auto já detecta WebSocket e comprime
+        # These locations DON'T need ws_deflate on —
+        # auto mode detects WebSocket and compresses automatically
         location /chat/ {
             proxy_pass http://chat_backend;
             proxy_http_version 1.1;
@@ -308,7 +308,7 @@ http {
             proxy_set_header Connection "upgrade";
         }
 
-        # Este vai ser excluído pelo ws_deflate_except
+        # This one is excluded by ws_deflate_except
         location /legacy/ {
             proxy_pass http://old_backend;
             proxy_http_version 1.1;
@@ -319,7 +319,7 @@ http {
 }
 ```
 
-### 4. Proxy reverso com múltiplos backends
+### 4. Reverse proxy with multiple backends
 
 ```nginx
 load_module modules/ngx_http_ws_deflate_module.so;
@@ -333,16 +333,16 @@ http {
         ssl_certificate     /etc/ssl/certs/nginx.crt;
         ssl_certificate_key /etc/ssl/private/nginx.key;
 
-        # Backend moderno: ele mesmo já comprime, nginx só passa
+        # Modern backend: it handles compression itself, nginx just proxies
         location /modern/ws/ {
             proxy_pass http://backend_modern;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
-            # ws_deflate desligado — o backend cuida da compressão
+            # ws_deflate off — the backend manages compression
         }
 
-        # Backend legado: não comprime, nginx faz a ponte
+        # Legacy backend: doesn't support compression, nginx bridges it
         location /legacy/ws/ {
             proxy_pass http://backend_legacy;
             proxy_http_version 1.1;
