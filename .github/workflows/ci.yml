@@ -144,6 +144,13 @@ jobs:
         source tests/python/venv/bin/activate
         python -m pytest tests/python/test_roundtrip.py tests/python/test_status_page.py -v --asyncio-mode=auto
 
+    - name: Run latency benchmark
+      if: runner.os != 'macOS'
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_latency.py -v -s
+
     - name: Run compression tests (browser + debug log)
       if: runner.os != 'macOS'
       run: |
