@@ -115,6 +115,9 @@ async def main():
     for d in ["client_body_temp", "proxy_temp"]:
         os.makedirs(f"{prefix}/{d}", exist_ok=True)
 
+    # nginx.conf uses absolute path /tmp/nginx-ws-test/logs/error.log
+    os.makedirs("/tmp/nginx-ws-test/logs", exist_ok=True)
+
     nginx_conf = str(Path(__file__).parent / "nginx.conf")
 
     # Verify config before starting
