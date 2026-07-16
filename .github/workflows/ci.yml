@@ -37,7 +37,7 @@ jobs:
     - name: Install system dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install pcre openssl wget curl
+        brew install pcre2 openssl wget curl
 
     - name: Install zlib-ng (Linux)
       if: runner.os == 'Linux'
@@ -200,9 +200,6 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        shell: cmd
     steps:
     - name: Checkout module
       uses: actions/checkout@v4
@@ -212,31 +209,21 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Install zlib-ng
+    - name: Install zlib-ng via vcpkg
       run: |
-        git clone --depth 1 --branch develop https://github.com/zlib-ng/zlib-ng.git
-        cd zlib-ng
-        cmake -B build -DCMAKE_BUILD_TYPE=Release -DZLIB_COMPAT=ON
-        cmake --build build --config Release
-        cmake --install build --prefix C:\usr
-
-    - name: Install Perl (for nginx configure)
-      run: |
-        choco install strawberryperl -y --no-progress
-        echo "C:\Strawberry\perl\bin" >> %GITHUB_PATH%
+        vcpkg install zlib-ng --triplet x64-windows
+        echo "VCPKG_ROOT=C:\vcpkg" >> %GITHUB_ENV%
 
     - name: Clone nginx + build module (static)
       run: |
         git clone https://github.com/nginx/nginx.git nginx-src
         cd nginx-src
-        git checkout %NGINX_VERSION%
+        git checkout release-1.31.3
         auto\configure ^
           --with-cc=cl ^
-          --with-cc-opt="-I C:\usr\include" ^
-          --with-ld-opt="-LIBPATH:C:\usr\lib" ^
+          --with-cc-opt="-I C:\vcpkg\installed\x64-windows\include" ^
+          --with-ld-opt="-LIBPATH:C:\vcpkg\installed\x64-windows\lib" ^
           --add-module=..\nginx-ws-compress\ngx_http_ws_deflate_module
         nmake -f objs\Makefile
         echo "=== Build complete ==="
-        if exist objs\nginx.exe (echo nginx.exe built) else (echo BUILD FAILED & exit /b 1)
-      env:
-        NGINX_VERSION: release-1.31.3
+        dir objs\*.exe /b
