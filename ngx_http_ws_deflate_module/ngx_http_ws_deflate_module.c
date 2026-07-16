@@ -5,15 +5,6 @@
 #include "ngx_http_ws_deflate_handshake.h"
 
 
-typedef struct {
-    ngx_flag_t    enabled;
-    ngx_flag_t    auto_detect;
-    ngx_array_t  *except_patterns;
-    ngx_int_t     compression_level;
-    ngx_flag_t    context_takeover;
-    size_t        chunk_size;
-} ngx_http_ws_deflate_loc_conf_t;
-
 static ngx_int_t ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf);
 static void *ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
