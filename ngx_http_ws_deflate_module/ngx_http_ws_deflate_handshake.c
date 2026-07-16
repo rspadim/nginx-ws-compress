@@ -130,26 +130,22 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 
     /* Add diagnostic header if compression was negotiated */
     if (ctx != NULL && ctx->client_deflate) {
-        h = ngx_list_push(&r->headers_out.headers);
-        if (h == NULL) {
-            return NGX_ERROR;
-        }
+        /* Note: Sec-WebSocket-Extensions is only added to the response
+         * when the compression tunnel is active. Currently the tunnel
+         * is disabled due to handler lifecycle issues, so we skip
+         * adding this header to prevent the client from sending
+         * compressed data that the backend can't handle. */
 
-        h->hash = 1;
-        ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
-        ngx_str_set(&h->value, "permessage-deflate");
-
-        /* Add diagnostic header so clients can confirm compression is active */
         h = ngx_list_push(&r->headers_out.headers);
         if (h == NULL) {
             return NGX_ERROR;
         }
         h->hash = 1;
         ngx_str_set(&h->key, "X-WS-Deflate");
-        ngx_str_set(&h->value, "active");
+        ngx_str_set(&h->value, "detected");
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: negotiated permessage-deflate with client");
+                      "ws_deflate: client requested permessage-deflate");
     }
 
     /* Tunnel installation temporarily disabled — event handler
