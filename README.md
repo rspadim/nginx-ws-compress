@@ -425,6 +425,14 @@ location /ws_deflate_status {
     "bytes_uncompressed": 104857600,
     "bytes_compressed": 12345678,
     "compression_ratio_pct": 88,
+    "latency_us": {
+      "mean": 385,
+      "min": 120,
+      "max": 2890,
+      "p50": 330,
+      "p95": 790,
+      "p99": 1200
+    },
     "status": "active"
   }
 }
