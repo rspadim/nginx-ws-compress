@@ -9,6 +9,7 @@ static ngx_int_t ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf);
 static void *ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_ws_deflate_header_filter(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ws_deflate_content_handler(ngx_http_request_t *r);
 
 static ngx_http_output_header_filter_pt ngx_http_next_header_filter;
 
@@ -92,8 +93,20 @@ ngx_module_t ngx_http_ws_deflate_module = {
 static ngx_int_t
 ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf)
 {
+    ngx_http_core_main_conf_t  *cmcf;
+    ngx_http_handler_pt        *h;
+
     ngx_http_next_header_filter = ngx_http_top_header_filter;
     ngx_http_top_header_filter = ngx_http_ws_deflate_header_filter;
+
+    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);
+    if (h == NULL) {
+        return NGX_ERROR;
+    }
+
+    *h = ngx_http_ws_deflate_content_handler;
 
     return NGX_OK;
 }
@@ -107,6 +120,15 @@ ngx_http_ws_deflate_header_filter(ngx_http_request_t *r)
     }
 
     return ngx_http_next_header_filter(r);
+}
+
+
+static ngx_int_t
+ngx_http_ws_deflate_content_handler(ngx_http_request_t *r)
+{
+    ngx_http_ws_deflate_request_handler(r);
+
+    return NGX_DECLINED;
 }
 
 

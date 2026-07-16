@@ -19,6 +19,7 @@ typedef struct {
 extern ngx_module_t ngx_http_ws_deflate_module;
 
 ngx_int_t ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r);
+ngx_int_t ngx_http_ws_deflate_request_handler(ngx_http_request_t *r);
 
 
 #endif /* _NGX_HTTP_WS_DEFLATE_HANDSHAKE_H_INCLUDED_ */

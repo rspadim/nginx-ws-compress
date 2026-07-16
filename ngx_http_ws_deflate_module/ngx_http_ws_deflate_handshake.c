@@ -7,27 +7,16 @@
 
 
 ngx_int_t
-ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
+ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
 {
     ngx_http_ws_deflate_loc_conf_t  *conf;
-    ngx_http_ws_deflate_ctx_t       *ctx;
-    ngx_table_elt_t                 *h, *ext;
+    ngx_table_elt_t                 *ext;
     ngx_list_part_t                 *part;
-    u_char                          *p, *start, *end;
-    size_t                           len;
     ngx_uint_t                       i;
-    ngx_str_t                        value;
+    ngx_table_elt_t                 *h;
 
     conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
-    if (conf == NULL) {
-        return NGX_DECLINED;
-    }
-
-    if (!conf->enabled && !conf->auto_detect) {
-        return NGX_DECLINED;
-    }
-
-    if (r->headers_out.status != NGX_HTTP_SWITCHING_PROTOCOLS) {
+    if (conf == NULL || (!conf->enabled && !conf->auto_detect)) {
         return NGX_DECLINED;
     }
 
@@ -43,11 +32,9 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     part = &r->headers_in.headers.part;
     h = part->elts;
 
-    for (i = 0; /* void */; i++) {
+    for (i = 0; ; i++) {
         if (i >= part->nelts) {
-            if (part->next == NULL) {
-                break;
-            }
+            if (part->next == NULL) break;
             part = part->next;
             h = part->elts;
             i = 0;
@@ -55,8 +42,7 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 
         if (h[i].key.len == 22
             && ngx_strncasecmp(h[i].key.data,
-                               (u_char *) "sec-websocket-extensions",
-                               22) == 0)
+                               (u_char *) "sec-websocket-extensions", 22) == 0)
         {
             ext = &h[i];
             break;
@@ -64,69 +50,31 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     }
 
     if (ext != NULL) {
-        value = ext->value;
+        ext->hash = 0;
+    }
 
-        p = ngx_strlcasestrn(value.data, value.data + value.len,
-                             (u_char *) "permessage-deflate", 18);
-        if (p != NULL) {
-            start = p;
-            end = p + 18;
+    return NGX_DECLINED;
+}
 
-            while (end < value.data + value.len && *end == ';') {
-                end++;
-                while (end < value.data + value.len && *end != ','
-                       && *end != ';')
-                {
-                    end++;
-                }
-            }
 
-            while (start > value.data && *(start - 1) == ' ') {
-                start--;
-            }
+ngx_int_t
+ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
+{
+    ngx_http_ws_deflate_loc_conf_t  *conf;
+    ngx_http_ws_deflate_ctx_t       *ctx;
+    ngx_table_elt_t                 *h;
 
-            if (start > value.data && *(start - 1) == ',') {
-                start--;
-                while (start > value.data && *(start - 1) == ' ') {
-                    start--;
-                }
-            }
+    conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
+    if (conf == NULL) {
+        return NGX_DECLINED;
+    }
 
-            while (end < value.data + value.len && *end == ' ') {
-                end++;
-            }
-            if (end < value.data + value.len && *end == ',') {
-                end++;
-            }
+    if (!conf->enabled && !conf->auto_detect) {
+        return NGX_DECLINED;
+    }
 
-            len = (start - value.data) + (value.data + value.len - end);
-
-            if (len == 0) {
-                ext->hash = 0;
-                ext->value.len = 0;
-
-            } else {
-                u_char  *new_data;
-                u_char  *d;
-
-                new_data = ngx_pnalloc(r->pool, len);
-                if (new_data == NULL) {
-                    return NGX_ERROR;
-                }
-
-                d = new_data;
-                if (start > value.data) {
-                    d = ngx_copy(d, value.data, start - value.data);
-                }
-                if (end < value.data + value.len) {
-                    d = ngx_copy(d, end, value.data + value.len - end);
-                }
-                (void) d;
-
-                ext->value.data = new_data;
-                ext->value.len = len;
-            }
-        }
+    if (r->headers_out.status != NGX_HTTP_SWITCHING_PROTOCOLS) {
+        return NGX_DECLINED;
     }
 
     h = ngx_list_push(&r->headers_out.headers);
