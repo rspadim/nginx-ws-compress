@@ -234,4 +234,4 @@ jobs:
           --add-module=..\nginx-ws-compress\ngx_http_ws_deflate_module
         nmake -f objs\Makefile
         echo === Build complete ===
-        dir objs\*.exe /b
+        if exist objs\nginx.exe (echo SUCCESS) else (echo nmake completed but nginx.exe not found & exit /b 1)
