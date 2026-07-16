@@ -3,9 +3,22 @@
 #include <ngx_http.h>
 #include <ngx_event.h>
 
-#include <sys/time.h>
-
 #include "ngx_http_ws_deflate_tunnel.h"
+
+
+/* Cross-platform microsecond timer for latency tracking.
+ * Linux/macOS: clock_gettime (POSIX, microsecond resolution).
+ * Windows: GetTickCount64 (millisecond resolution, fallback). */
+#if (NGX_WIN32)
+#define ngx_ws_gettime_us()  ((ngx_int_t)(GetTickCount64() * 1000))
+#else
+#include <time.h>
+static ngx_int_t ngx_ws_gettime_us(void) {
+    struct timespec  ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (ngx_int_t)(ts.tv_sec * 1000000 + ts.tv_nsec / 1000);
+}
+#endif
 
 
 /* Latency tracking (compile-time option, ON by default).
@@ -452,10 +465,10 @@ ngx_http_ws_deflate_process_upstream_data(
         if (frame.opcode == NGX_WS_OPCODE_TEXT
             || frame.opcode == NGX_WS_OPCODE_BINARY)
         {
-            struct timeval  tv_start, tv_end;
+            ngx_int_t  t_start = 0, t_end = 0;
 
             if (NGX_WS_LATENCY_TRACK) {
-                gettimeofday(&tv_start, NULL);
+                t_start = ngx_ws_gettime_us();
             }
 
             size_t  need = frame.payload_len + 64;
@@ -475,10 +488,8 @@ ngx_http_ws_deflate_process_upstream_data(
             }
 
             if (NGX_WS_LATENCY_TRACK) {
-                gettimeofday(&tv_end, NULL);
-                ngx_int_t  elapsed = (ngx_int_t)(
-                    (tv_end.tv_sec - tv_start.tv_sec) * 1000000
-                    + (tv_end.tv_usec - tv_start.tv_usec));
+                t_end = ngx_ws_gettime_us();
+                ngx_int_t  elapsed = t_end - t_start;
                 if (elapsed < 0) elapsed = 0;
 
                 /* Update global histogram and stats */
