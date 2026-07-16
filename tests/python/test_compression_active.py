@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.skipif(not _chromium_available(),
     reason="Playwright Chromium not available")]
 
 
-def test_compression_reduces_wire_size(nginx_debug_server):
+def test_compression_reduces_wire_size(nginx_server):
     """
     Chrome negotiates permessage-deflate automatically.
     A highly repetitive 10KB payload should be compressed to much less
@@ -28,7 +28,7 @@ def test_compression_reduces_wire_size(nginx_debug_server):
     """
     from pathlib import Path
 
-    # nginx_debug_server uses prefix /tmp/nginx-ws-test-debug
+    # nginx.conf now has error_log ... debug; pointing here
     log_path = Path("/tmp/nginx-ws-test-debug/logs/error.log")
     if log_path.exists():
         log_path.write_text("")
@@ -36,30 +36,33 @@ def test_compression_reduces_wire_size(nginx_debug_server):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        payload = "A" * 10_000
-        page.evaluate(f"""
-            async () => {{
-                const ws = new WebSocket('ws://127.0.0.1:8093/ws');
-                await new Promise((resolve, reject) => {{
-                    ws.onopen = () => ws.send('{payload}');
+        # Use JS .repeat() to avoid huge string in Python f-string
+        result = page.evaluate("""
+            async () => {
+                const ws = new WebSocket('ws://127.0.0.1:8090/ws');
+                return await new Promise((resolve, reject) => {
+                    ws.onopen = () => ws.send('A'.repeat(10000));
                     ws.onmessage = (e) => resolve(e.data.length);
-                    ws.onerror = (e) => reject(e.error?.message);
+                    ws.onerror = (e) => reject(e.error?.message || 'ws error');
                     setTimeout(() => reject('timeout'), 15000);
-                }});
-            }}
+                });
+            }
         """)
+        assert result == 10000, f"Expected 10000 bytes back, got {result}"
         browser.close()
 
     # Check debug log for compression evidence
     log_text = log_path.read_text()
+    assert "ws_deflate: tunnel installed" in log_text, (
+        "Tunnel was not installed — compression cannot happen"
+    )
     assert "ws_deflate: compressed" in log_text, (
         "No compression entries in debug log — tunnel may not be active"
     )
 
-    # Verify compression ratio: 10KB of 'A's should compress well under 1KB
+    # Print compression ratio
     for line in log_text.splitlines():
         if "ws_deflate: compressed" in line:
-            # Format: "ws_deflate: compressed 10000→87 bytes" (example)
             parts = line.split("compressed ")[1].split("→")
             before = int(parts[0])
             after = int(parts[1].split(" ")[0])
@@ -72,7 +75,7 @@ def test_compression_reduces_wire_size(nginx_debug_server):
             break
 
 
-def test_max_compress_len_respected(nginx_debug_server):
+def test_max_compress_len_respected(nginx_server):
     """
     ws_deflate_max_compress_len 1024 should skip compression for
     payloads larger than 1KB. A 10KB message should pass through raw.
@@ -86,22 +89,25 @@ def test_max_compress_len_respected(nginx_debug_server):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        payload = "A" * 10_000
-        page.evaluate(f"""
-            async () => {{
-                const ws = new WebSocket('ws://127.0.0.1:8093/maxcompress');
-                await new Promise((resolve, reject) => {{
-                    ws.onopen = () => ws.send('{payload}');
+        result = page.evaluate("""
+            async () => {
+                const ws = new WebSocket('ws://127.0.0.1:8090/maxcompress');
+                return await new Promise((resolve, reject) => {
+                    ws.onopen = () => ws.send('A'.repeat(10000));
                     ws.onmessage = (e) => resolve(e.data.length);
-                    ws.onerror = (e) => reject(e.error?.message);
+                    ws.onerror = (e) => reject(e.error?.message || 'ws error');
                     setTimeout(() => reject('timeout'), 15000);
-                }});
-            }}
+                });
+            }
         """)
+        assert result == 10000, f"Expected 10000 bytes back, got {result}"
         browser.close()
 
     log_text = log_path.read_text()
-    # There should be NO compression for this 10KB payload (max was 1024)
+    # Should have tunnel installed
+    assert "ws_deflate: tunnel installed" in log_text, "Tunnel not installed"
+
+    # But should NOT have compression (payload > max_compress_len=1024)
     for line in log_text.splitlines():
         if "ws_deflate: compressed" in line:
             pytest.fail(f"Found compression despite max_compress_len=1024: {line}")
