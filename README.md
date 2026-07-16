@@ -1,6 +1,7 @@
 # nginx WebSocket per-message Deflate Module
 
 [![CI](https://github.com/rspadim/nginx-ws-compress/actions/workflows/ci.yml/badge.svg)](https://github.com/rspadim/nginx-ws-compress/actions/workflows/ci.yml)
+[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-blue)](https://github.com/rspadim/nginx-ws-compress/actions)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 
 **ngx_http_ws_deflate_module** — Dynamic nginx module that enables WebSocket
@@ -454,6 +455,27 @@ ngx_http_ws_deflate_module/
   request pool without freeing until connection close. For long-lived
   connections with thousands of frames, memory usage grows linearly. A
   sub-pool or reusable scratch buffer optimization is planned.
+
+---
+
+## Platforms
+
+The module is written in portable C and compiles on any architecture
+supported by nginx. CI-tested:
+
+| Architecture | Status |
+|---|---|
+| **amd64** (x86_64) | ✅ Full CI (build + tests + browser + load) |
+| **arm64** (AArch64) | ✅ Build + C tests + integration tests |
+
+To build on any platform, the same commands apply:
+
+```bash
+./auto/configure --add-dynamic-module=path/to/ngx_http_ws_deflate_module
+make modules
+```
+
+No platform-specific code or assembly — pure C with zlib.
 
 ---
 
