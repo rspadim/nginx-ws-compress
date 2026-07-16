@@ -65,7 +65,7 @@ ngx_int_t
 ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 {
     ngx_http_ws_deflate_loc_conf_t  *conf;
-    ngx_http_ws_deflate_ctx_t       *ctx;
+    ngx_http_ws_deflate_tunnel_ctx_t *ctx;
     ngx_table_elt_t                 *h;
 
     conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
@@ -92,15 +92,17 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
     if (ctx == NULL) {
-        ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_ws_deflate_ctx_t));
-        if (ctx == NULL) {
-            return NGX_ERROR;
-        }
-
-        ngx_http_set_ctx(r, ctx, ngx_http_ws_deflate_module);
+        return NGX_OK;  /* Tunnel will be initialized by tunnel_install */
     }
 
     ctx->initialized = 1;
+
+    /* Install the tunnel to intercept WebSocket frames */
+    if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "ws_deflate: failed to install tunnel");
+        return NGX_ERROR;
+    }
 
     return NGX_OK;
 }
