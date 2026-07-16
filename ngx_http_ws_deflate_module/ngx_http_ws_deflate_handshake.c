@@ -15,6 +15,10 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
     ngx_uint_t                       i;
     ngx_table_elt_t                 *h;
 
+    if (ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module) != NULL) {
+        return NGX_DECLINED;
+    }
+
     conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
     if (conf == NULL || (!conf->enabled && !conf->auto_detect)) {
         return NGX_DECLINED;
