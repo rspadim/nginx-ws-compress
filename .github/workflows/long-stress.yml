@@ -1,0 +1,210 @@
+name: Long Stress Test (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Test duration in minutes'
+        required: true
+        default: '30'
+        type: string
+      connections:
+        description: 'Number of concurrent connections'
+        required: true
+        default: '5'
+        type: string
+
+env:
+  NGINX_VERSION: release-1.31.3
+
+jobs:
+  long-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+    - name: Checkout module
+      uses: actions/checkout@v4
+      with:
+        path: nginx-ws-compress
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential git libpcre3-dev libssl-dev \
+          autoconf automake libtool pkg-config \
+          python3 python3-pip python3-venv curl wget
+
+    - name: Install zlib-ng
+      run: |
+        git clone --depth 1 --branch develop https://github.com/zlib-ng/zlib-ng.git
+        cd zlib-ng
+        ./configure --prefix=/usr/local --zlib-compat
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+
+    - name: Clone nginx + build module
+      run: |
+        git clone https://github.com/nginx/nginx.git nginx-src
+        cd nginx-src
+        git checkout ${{ env.NGINX_VERSION }}
+        ./auto/configure \
+          --with-compat \
+          --with-cc-opt="-I/usr/local/include" \
+          --with-ld-opt="-L/usr/local/lib" \
+          --add-dynamic-module=../nginx-ws-compress/ngx_http_ws_deflate_module
+        make modules -j$(nproc)
+        sudo make install
+        echo "=== Module built ==="
+        ls -la objs/ngx_http_ws_deflate_module.so
+
+    - name: Setup Python venv
+      run: |
+        cd nginx-ws-compress/tests/python
+        python3 -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run long stress test
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python3 -u -c "
+import asyncio
+import psutil
+import time
+import sys
+sys.path.insert(0, 'tests/python')
+from ws_client import WSTestClient
+
+DURATION = int(${{ inputs.duration_minutes }}) * 60
+CONNECTIONS = int(${{ inputs.connections }})
+MSG_SIZE = 16384  # 16KB
+INTERVAL = 30  # report every 30s
+MSG_INTERVAL = 0.005  # 5ms between sends (~200 msg/s per connection)
+
+async def stress(client_id: int):
+    \"\"\"Keep sending messages for the full duration.\"\"\"
+    client = WSTestClient('ws://127.0.0.1:8090/ws')
+    await client.connect()
+    msg_count = 0
+    start = time.time()
+    try:
+        while time.time() - start < DURATION:
+            payload = f's-{client_id}-{msg_count}:' + 'Z' * (MSG_SIZE - 20)
+            await client.send_text(payload)
+            resp = await client.recv_text()
+            assert resp == payload, f'Data mismatch at {client_id}/{msg_count}'
+            msg_count += 1
+            await asyncio.sleep(MSG_INTERVAL)
+    except Exception as e:
+        print(f'[C{client_id}] Error after {msg_count} msgs: {e}')
+    finally:
+        await client.close()
+    return msg_count
+
+def get_nginx_mem():
+    total = 0
+    for proc in psutil.process_iter(['name', 'cmdline']):
+        try:
+            name = proc.info['name']
+            cmdline = proc.info.get('cmdline') or []
+            if name and 'nginx' in name:
+                if any('worker' in c for c in cmdline if c):
+                    total += proc.memory_info().rss
+        except: pass
+    return total
+
+async def main():
+    # Start nginx + backend
+    import subprocess
+    subprocess.run(['pkill', '-9', 'nginx'], capture_output=True)
+    subprocess.run(['pkill', '-9', 'uvicorn'], capture_output=True)
+    time.sleep(2)
+
+    # Start backend
+    venv_python = 'tests/python/venv/bin/python3'
+    backend = subprocess.Popen(
+        [venv_python, '-m', 'uvicorn', 'ws_backend:app',
+         '--host', '127.0.0.1', '--port', '9001', '--log-level', 'error'],
+        cwd='tests/python', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(2)
+
+    # Start nginx
+    import os
+    prefix = '/tmp/nginx-ws-stress'
+    os.makedirs(f'{prefix}/logs', exist_ok=True)
+    for d in ['client_body_temp', 'proxy_temp']:
+        os.makedirs(f'{prefix}/{d}', exist_ok=True)
+    nginx = subprocess.run([
+        '/usr/local/nginx/sbin/nginx',
+        '-c', os.path.abspath('tests/python/nginx.conf'),
+        '-p', prefix
+    ], capture_output=True)
+    time.sleep(1)
+
+    mem_start = get_nginx_mem()
+    print(f'=== Long Stress Test ===')
+    print(f'Duration: {DURATION}s | Connections: {CONNECTIONS} | Msg size: {MSG_SIZE}B')
+    print(f'nginx RSS start: {mem_start / 1024 / 1024:.1f} MB')
+    print()
+
+    tasks = [stress(i) for i in range(CONNECTIONS)]
+    reporter = asyncio.create_task(report_loop(mem_start))
+    results = await asyncio.gather(*tasks)
+    reporter.cancel()
+
+    total_msgs = sum(results)
+    total_data = total_msgs * MSG_SIZE
+    mem_end = get_nginx_mem()
+    delta_mb = (mem_end - mem_start) / 1024 / 1024
+
+    print()
+    print(f'=== Results ===')
+    print(f'Total messages: {total_msgs}')
+    print(f'Total data: {total_data / 1024 / 1024:.1f} MB')
+    print(f'nginx RSS end:   {mem_end / 1024 / 1024:.1f} MB')
+    print(f'nginx RSS delta: {delta_mb:+.2f} MB')
+    print(f'Per-connection overhead: {delta_mb / CONNECTIONS:.2f} MB')
+
+    # Cleanup
+    subprocess.run(['/usr/local/nginx/sbin/nginx', '-s', 'stop', '-p', prefix], capture_output=True)
+    backend.terminate()
+    backend.wait()
+
+    if delta_mb > 100:
+        print(f'FAIL: memory grew {delta_mb:.1f}MB — possible leak')
+        sys.exit(1)
+    else:
+        print(f'PASS: memory stable (delta {delta_mb:+.2f}MB)')
+
+    # Write summary to GITHUB_STEP_SUMMARY
+    summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary_path:
+        with open(summary_path, 'w') as f:
+            f.write(f'## Long Stress Test Results\\n')
+            f.write(f'| Metric | Value |\\n')
+            f.write(f'|---|---|\\n')
+            f.write(f'| Duration | {DURATION}s |\\n')
+            f.write(f'| Connections | {CONNECTIONS} |\\n')
+            f.write(f'| Total messages | {total_msgs} |\\n')
+            f.write(f'| Total data | {total_data / 1024 / 1024:.1f} MB |\\n')
+            f.write(f'| Memory delta | {delta_mb:+.2f} MB |\\n')
+            f.write(f'| Status | {\"PASS\" if delta_mb <= 100 else \"FAIL\"} |\\n')
+
+async def report_loop(mem_start):
+    \"\"\"Report memory every INTERVAL seconds.\"\"\"
+    end = time.time() + DURATION
+    while time.time() < end:
+        await asyncio.sleep(INTERVAL)
+        mem_now = get_nginx_mem()
+        delta_mb = (mem_now - mem_start) / 1024 / 1024
+        elapsed = int(time.time() - (end - DURATION))
+        print(f'  [{elapsed}s] nginx RSS: {mem_now / 1024 / 1024:.1f} MB (delta: {delta_mb:+.2f} MB)')
+
+DURATION = int(${{ inputs.duration_minutes }}) * 60
+asyncio.run(main())
+" 2>&1
