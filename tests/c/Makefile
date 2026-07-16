@@ -13,12 +13,16 @@ NGX_INCS += -I $(NGX_SRC)/objs $(NGX_INC)
 MODULE_INC = -I ../../ngx_http_ws_deflate_module
 
 FRAME_SRC = ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_frame.c
+COMPRESS_SRC = ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_compress.c
 
-test_runner: test_frame.c $(FRAME_SRC)
+test_frame: test_frame.c $(FRAME_SRC)
 	$(CC) $(CFLAGS) $(NGX_INCS) $(MODULE_INC) -o $@ test_frame.c $(FRAME_SRC)
 
-test: test_runner
-	./test_runner
+test_compress: test_compress.c $(COMPRESS_SRC)
+	$(CC) $(CFLAGS) $(NGX_INCS) $(MODULE_INC) -o $@ test_compress.c $(COMPRESS_SRC) -lz
+
+test: test_frame test_compress
+	./test_frame && ./test_compress
 
 clean:
-	rm -f test_runner
+	rm -f test_frame test_compress
