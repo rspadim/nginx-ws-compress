@@ -9,11 +9,12 @@
 ngx_int_t
 ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
 {
-    ngx_http_ws_deflate_loc_conf_t  *conf;
-    ngx_table_elt_t                 *ext;
-    ngx_list_part_t                 *part;
-    ngx_uint_t                       i;
-    ngx_table_elt_t                 *h;
+    ngx_http_ws_deflate_loc_conf_t       *conf;
+    ngx_http_ws_deflate_tunnel_ctx_t     *ctx;
+    ngx_table_elt_t                      *ext;
+    ngx_list_part_t                      *part;
+    ngx_uint_t                            i;
+    ngx_table_elt_t                      *h;
 
     if (ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module) != NULL) {
         return NGX_DECLINED;
@@ -32,6 +33,7 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
+    /* Find Sec-WebSocket-Extensions header */
     ext = NULL;
     part = &r->headers_in.headers.part;
     h = part->elts;
@@ -53,7 +55,18 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
         }
     }
 
+    /* Allocate context and record whether client requested deflate */
+    ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_ws_deflate_tunnel_ctx_t));
+    if (ctx == NULL) {
+        return NGX_ERROR;
+    }
+    ngx_http_set_ctx(r, ctx, ngx_http_ws_deflate_module);
+
     if (ext != NULL) {
+        if (ngx_strstr(ext->value.data, (u_char *) "permessage-deflate") != NULL) {
+            ctx->client_deflate = 1;
+        }
+        /* Remove extensions header so backend doesn't see it */
         ext->hash = 0;
     }
 
@@ -64,8 +77,9 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
 ngx_int_t
 ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 {
-    ngx_http_ws_deflate_loc_conf_t  *conf;
-    ngx_table_elt_t                 *h;
+    ngx_http_ws_deflate_loc_conf_t       *conf;
+    ngx_http_ws_deflate_tunnel_ctx_t     *ctx;
+    ngx_table_elt_t                      *h;
 
     conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
     if (conf == NULL) {
@@ -80,14 +94,19 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
-    h = ngx_list_push(&r->headers_out.headers);
-    if (h == NULL) {
-        return NGX_ERROR;
-    }
+    ctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
 
-    h->hash = 1;
-    ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
-    ngx_str_set(&h->value, "permessage-deflate");
+    /* Only add Sec-WebSocket-Extensions if client requested deflate */
+    if (ctx != NULL && ctx->client_deflate) {
+        h = ngx_list_push(&r->headers_out.headers);
+        if (h == NULL) {
+            return NGX_ERROR;
+        }
+
+        h->hash = 1;
+        ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
+        ngx_str_set(&h->value, "permessage-deflate");
+    }
 
     /* Install the tunnel to intercept WebSocket frames.
      * tunnel_install allocates and sets up the tunnel context. */

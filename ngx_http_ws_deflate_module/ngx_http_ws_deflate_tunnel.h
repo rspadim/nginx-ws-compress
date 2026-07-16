@@ -18,6 +18,7 @@ typedef struct {
     ngx_http_ws_deflate_loc_conf_t *conf;             /* module config snapshot */
     ngx_pool_t                  *pool;                /* request pool */
     ngx_flag_t                   initialized;         /* context is ready */
+    ngx_flag_t                   client_deflate;      /* client negotiated deflate */
 } ngx_http_ws_deflate_tunnel_ctx_t;
 
 

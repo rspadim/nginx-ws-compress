@@ -28,7 +28,7 @@ static ngx_int_t ngx_http_ws_deflate_process_upstream_data(
 ngx_int_t
 ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
 {
-    ngx_http_ws_deflate_tunnel_ctx_t  *tctx;
+    ngx_http_ws_deflate_tunnel_ctx_t  *tctx, *old_ctx;
     ngx_http_ws_deflate_loc_conf_t    *lcf;
     ngx_connection_t                  *c, *pc;
 
@@ -40,6 +40,9 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
 
+    /* Check if there's an existing context (from handshake) */
+    old_ctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
+
     tctx = ngx_pcalloc(r->pool, sizeof(ngx_http_ws_deflate_tunnel_ctx_t));
     if (tctx == NULL) {
         return NGX_ERROR;
@@ -49,6 +52,11 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
                                 lcf->context_takeover) != NGX_OK)
     {
         return NGX_ERROR;
+    }
+
+    /* Preserve client_deflate flag from handshake context if present */
+    if (old_ctx != NULL) {
+        tctx->client_deflate = old_ctx->client_deflate;
     }
 
     /* Allocate buffers using the request pool */
@@ -192,6 +200,27 @@ ngx_http_ws_deflate_process_client_data(
     ngx_ws_frame_t   frame;
     ngx_int_t        rc;
 
+    /* Pass-through: when client_deflate is disabled, just forward raw bytes */
+    if (!tctx->client_deflate) {
+        len = tctx->client_buf->last - tctx->client_buf->pos;
+        if (len > 0) {
+            ngx_connection_t *pc = tctx->upstream_connection;
+            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, len);
+            if (b == NULL) return NGX_ERROR;
+            ngx_memcpy(b->start, tctx->client_buf->pos, len);
+            b->last = b->start + len;
+            b->memory = 1;
+            ngx_chain_t chain;
+            chain.buf = b;
+            chain.next = NULL;
+            if (pc->send_chain(pc, &chain, 0) == NGX_CHAIN_ERROR) {
+                return NGX_ERROR;
+            }
+            tctx->client_buf->pos = tctx->client_buf->last;
+        }
+        return NGX_OK;
+    }
+
     data = tctx->client_buf->pos;
     len = tctx->client_buf->last - tctx->client_buf->pos;
 
@@ -215,9 +244,11 @@ ngx_http_ws_deflate_process_client_data(
                                     frame.masking_key);
         }
 
-        /* If this is a data frame with RSV1 set, decompress it */
-        if (frame.rsv1 && (frame.opcode == NGX_WS_OPCODE_TEXT
-                           || frame.opcode == NGX_WS_OPCODE_BINARY))
+        /* If this is a data frame with RSV1 set, decompress it (only if deflate negotiated) */
+        if (tctx->client_deflate
+            && frame.rsv1
+            && (frame.opcode == NGX_WS_OPCODE_TEXT
+                || frame.opcode == NGX_WS_OPCODE_BINARY))
         {
             /* Allocate decompression buffer */
             u_char  *decomp = ngx_palloc(tctx->pool, frame.payload_len * 2 + 64);
@@ -323,6 +354,27 @@ ngx_http_ws_deflate_process_upstream_data(
     ngx_ws_frame_t   frame;
     ngx_int_t        rc;
 
+    /* Pass-through: when client_deflate is disabled, just forward raw bytes */
+    if (!tctx->client_deflate) {
+        len = tctx->upstream_buf->last - tctx->upstream_buf->pos;
+        if (len > 0) {
+            ngx_connection_t *c = tctx->client_connection;
+            ngx_buf_t *b = ngx_create_temp_buf(tctx->pool, len);
+            if (b == NULL) return NGX_ERROR;
+            ngx_memcpy(b->start, tctx->upstream_buf->pos, len);
+            b->last = b->start + len;
+            b->memory = 1;
+            ngx_chain_t chain;
+            chain.buf = b;
+            chain.next = NULL;
+            if (c->send_chain(c, &chain, 0) == NGX_CHAIN_ERROR) {
+                return NGX_ERROR;
+            }
+            tctx->upstream_buf->pos = tctx->upstream_buf->last;
+        }
+        return NGX_OK;
+    }
+
     data = tctx->upstream_buf->pos;
     len = tctx->upstream_buf->last - tctx->upstream_buf->pos;
 
@@ -367,9 +419,10 @@ ngx_http_ws_deflate_process_upstream_data(
             return NGX_ERROR;  /* Signal close */
         }
 
-        /* Compress data frames */
-        if (frame.opcode == NGX_WS_OPCODE_TEXT
-            || frame.opcode == NGX_WS_OPCODE_BINARY)
+        /* Compress data frames only if client requested deflate */
+        if (tctx->client_deflate
+            && (frame.opcode == NGX_WS_OPCODE_TEXT
+                || frame.opcode == NGX_WS_OPCODE_BINARY))
         {
             u_char  *comp = ngx_palloc(tctx->pool, frame.payload_len + 64);
             if (comp == NULL) return NGX_ERROR;

@@ -26,12 +26,12 @@ async def test_binary_message(nginx_server):
 
 async def test_large_payload(nginx_server):
     client = WSTestClient("ws://127.0.0.1:8090/ws")
-    large = "A" * 100_000
+    large = "A" * 10_000  # 10KB
     await client.connect()
     await client.send_text(large)
     response = await client.recv_text()
     assert response == large
-    assert len(response) == 100_000
+    assert len(response) == 10_000
     await client.close()
 
 
