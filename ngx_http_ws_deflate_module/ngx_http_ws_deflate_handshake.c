@@ -128,30 +128,40 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     /* Count this connection regardless of compression negotiation */
     ngx_ws_deflate_total_connections++;
 
-    /* Add diagnostic header if compression was negotiated */
     if (ctx != NULL && ctx->client_deflate) {
-        /* Note: Sec-WebSocket-Extensions is only added to the response
-         * when the compression tunnel is active. Currently the tunnel
-         * is disabled due to handler lifecycle issues, so we skip
-         * adding this header to prevent the client from sending
-         * compressed data that the backend can't handle. */
+        /* Add Sec-WebSocket-Extensions to response so client knows
+         * permessage-deflate was accepted */
+        h = ngx_list_push(&r->headers_out.headers);
+        if (h == NULL) {
+            return NGX_ERROR;
+        }
+        h->hash = 1;
+        ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
+        ngx_str_set(&h->value, "permessage-deflate");
 
+        /* Add diagnostic header */
         h = ngx_list_push(&r->headers_out.headers);
         if (h == NULL) {
             return NGX_ERROR;
         }
         h->hash = 1;
         ngx_str_set(&h->key, "X-WS-Deflate");
-        ngx_str_set(&h->value, "detected");
+        ngx_str_set(&h->value, "active");
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: client requested permessage-deflate");
+                      "ws_deflate: negotiated permessage-deflate with client");
     }
 
-    /* Tunnel installation temporarily disabled — event handler
-     * ordering conflicts with nginx proxy module post-upgrade.
-     * Counters and status page still work. Compression will be
-     * re-enabled after the handler lifecycle is fixed. */
+    /* Install compression tunnel by replacing upstream event handlers.
+     * This approach keeps ngx_http_upstream_handler as the connection
+     * event handler (set by proxy module) and only replaces the
+     * u->read_event_handler / u->write_event_handler function pointers. */
+    if (ctx != NULL && ctx->client_deflate) {
+        if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "ws_deflate: tunnel install failed");
+        }
+    }
 
     return NGX_OK;
 }
