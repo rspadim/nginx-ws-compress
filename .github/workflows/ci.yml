@@ -142,7 +142,7 @@ jobs:
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
-        python -m pytest tests/python/test_roundtrip.py -v --asyncio-mode=auto
+        python -m pytest tests/python/test_roundtrip.py tests/python/test_status_page.py -v --asyncio-mode=auto
 
     - name: Run compression tests (browser + debug log)
       if: runner.os != 'macOS'
