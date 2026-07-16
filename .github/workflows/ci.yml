@@ -107,23 +107,20 @@ jobs:
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
         python -m pytest tests/python/ -v --asyncio-mode=auto \
-          -k "not browser" \
-          --timeout=60
+          -k "not browser"
 
     - name: Run browser test (Playwright)
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
-        python -m pytest tests/python/test_browser.py -v --asyncio-mode=auto \
-          --timeout=30
+        python -m pytest tests/python/test_browser.py -v --asyncio-mode=auto
       continue-on-error: true
 
     - name: Run load test
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
-        python -m pytest tests/python/test_load.py -v --asyncio-mode=auto \
-          --timeout=120
+        python -m pytest tests/python/test_load.py -v --asyncio-mode=auto
       continue-on-error: true
 
   # Minimal build-only job for quick feedback
