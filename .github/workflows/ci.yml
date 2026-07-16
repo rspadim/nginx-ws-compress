@@ -142,6 +142,21 @@ jobs:
         source tests/python/venv/bin/activate
         python -m pytest tests/python/test_roundtrip.py -v --asyncio-mode=auto
 
+    - name: Run compression tests (browser + debug log)
+      if: runner.os != 'macOS'
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_compression_active.py -v -s
+
+    - name: Run long stream test (10MB)
+      if: runner.os != 'macOS'
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_long_stream.py -v -s
+      timeout-minutes: 5
+
     - name: Run load test (50 concurrent connections)
       if: runner.os != 'macOS'
       run: |

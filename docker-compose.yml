@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  # Legacy backend (no WebSocket compression support)
+  backend:
+    image: python:3.12-slim
+    command: >
+      sh -c "
+        pip install -q fastapi uvicorn &&
+        python -m uvicorn ws_backend:app --host 0.0.0.0 --port 9001
+      "
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./tests/python/ws_backend.py:/ws_backend.py
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ngx_http_ws_deflate_module.so:/etc/nginx/modules/ngx_http_ws_deflate_module.so:ro
+    depends_on:
+      - backend

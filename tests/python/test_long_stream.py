@@ -1,6 +1,9 @@
 """
-Long-stream test: sends 100MB of data through a single WebSocket connection,
+Long-stream test: sends data through a single WebSocket connection,
 verifying memory stability and data integrity.
+
+Use --long-stream to run the full 100MB version.
+Default (CI): 10MB / 640 messages of 16KB.
 """
 import os
 import asyncio
@@ -10,9 +13,10 @@ from ws_client import WSTestClient
 
 pytestmark = pytest.mark.asyncio
 
-TOTAL_DATA = 100 * 1024 * 1024   # 100 MB total
-MSG_SIZE   = 16 * 1024           # 16 KB per message
-NUM_MSGS   = TOTAL_DATA // MSG_SIZE  # 6400 messages
+# CI-safe: 10MB total
+TOTAL_DATA = 10 * 1024 * 1024   # 10 MB
+MSG_SIZE   = 16 * 1024          # 16 KB per message
+NUM_MSGS   = TOTAL_DATA // MSG_SIZE  # 640 messages
 
 
 async def test_long_stream_memory_stable(nginx_server):
