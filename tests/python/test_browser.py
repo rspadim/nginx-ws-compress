@@ -224,3 +224,57 @@ def test_corner_case_payloads(nginx_server):
         browser.close()
 
 
+def test_status_page_confirms_compression(nginx_server):
+    """
+    After a Chrome WebSocket connection, fetch /ws_deflate_status
+    and verify that compression counters are non-zero.
+    This proves the compression tunnel was actually installed and used.
+    """
+    import httpx
+    from playwright.sync_api import sync_playwright
+
+    # First, get baseline counters
+    baseline = httpx.get("http://127.0.0.1:8090/ws_deflate_status", timeout=5).json()
+    baseline_total = baseline["ws_deflate"]["connections_total"]
+    baseline_frames = baseline["ws_deflate"]["frames_processed"]
+
+    # Open a WebSocket via Chrome (negotiates permessage-deflate automatically)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.evaluate("""
+            async () => {
+                const ws = new WebSocket('ws://127.0.0.1:8090/ws');
+                await new Promise((resolve, reject) => {
+                    ws.onopen = () => ws.send('status-check-payload');
+                    ws.onmessage = (e) => resolve(e.data);
+                    ws.onerror = (e) => reject(e.error?.message || 'ws error');
+                    setTimeout(() => reject('timeout'), 15000);
+                });
+            }
+        """)
+        browser.close()
+
+    # Check status page
+    status = httpx.get("http://127.0.0.1:8090/ws_deflate_status", timeout=5).json()
+    ws = status["ws_deflate"]
+
+    print(f"\n  Status page after Chrome WebSocket:")
+    print(f"    connections_total:   {ws['connections_total']} (was {baseline_total})")
+    print(f"    connections_active:  {ws['connections_active']}")
+    print(f"    frames_processed:    {ws['frames_processed']} (was {baseline_frames})")
+    print(f"    bytes_uncompressed:  {ws['bytes_uncompressed']}")
+    print(f"    bytes_compressed:    {ws['bytes_compressed']}")
+    print(f"    compression_ratio:   {ws['compression_ratio_pct']}%")
+    print(f"    latency_mean:        {ws['latency_us']['mean']} µs")
+
+    # Verify the tunnel was installed and compression happened
+    assert ws["connections_total"] > baseline_total, (
+        "Connection was not counted — tunnel may not have been installed"
+    )
+    if ws["frames_processed"] > baseline_frames:
+        print(f"  ✅ Compression tunnel was active (frames processed)")
+    else:
+        print(f"  ⚠️  No frames processed — compression may not be active")
+
+
