@@ -185,14 +185,17 @@ ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data, size_t len,
 }
 
 
-/* --- Upstream event handlers (called by ngx_http_upstream_handler) --- */
+/* --- Upstream event handler: processes data FROM upstream, writes TO client --- */
+/* Called by ngx_http_upstream_handler for read events on BOTH connections.
+ * Also called by ngx_http_run_posted_requests indirectly.
+ * We read from upstream, compress, and write to client. */
 
 static void
 ngx_http_ws_deflate_read_upstream(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     ngx_http_ws_deflate_tunnel_ctx_t   *tctx;
-    ngx_connection_t                   *c, *pc;
+    ngx_connection_t                   *pc;
     ssize_t                             n;
 
     tctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
@@ -200,46 +203,40 @@ ngx_http_ws_deflate_read_upstream(ngx_http_request_t *r,
         return;
     }
 
-    c = r->connection;
     pc = u->peer.connection;
 
-    /* Try reading from upstream */
+    if (pc->read->timedout) {
+        ngx_http_ws_deflate_tunnel_close(r);
+        return;
+    }
+
     n = pc->recv(pc, tctx->upstream_buf->last,
                  tctx->upstream_buf->end - tctx->upstream_buf->last);
 
-    if (n > 0) {
-        tctx->upstream_buf->last += n;
-        if (ngx_http_ws_deflate_process_data(tctx, pc, c,
-                tctx->upstream_buf, 1) != NGX_OK)
-        {
-            ngx_http_ws_deflate_tunnel_close(r);
-            return;
-        }
+    if (n == NGX_ERROR || n == 0) {
+        ngx_http_ws_deflate_tunnel_close(r);
+        return;
     }
 
-    /* Also try reading from client (deferred data) */
-    n = c->recv(c, tctx->client_buf->last,
-                tctx->client_buf->end - tctx->client_buf->last);
-
-    if (n > 0) {
-        tctx->client_buf->last += n;
-        if (ngx_http_ws_deflate_process_data(tctx, c, pc,
-                tctx->client_buf, 0) != NGX_OK)
-        {
+    if (n == NGX_AGAIN) {
+        if (ngx_handle_read_event(pc->read, 0) != NGX_OK) {
             ngx_http_ws_deflate_tunnel_close(r);
-            return;
         }
+        return;
     }
 
-    /* Re-register read events */
+    tctx->upstream_buf->last += n;
+
+    /* Process upstream→client: compress data frames */
+    if (ngx_http_ws_deflate_process_data(tctx, pc, r->connection,
+            tctx->upstream_buf, 1) != NGX_OK)
+    {
+        ngx_http_ws_deflate_tunnel_close(r);
+        return;
+    }
+
     if (ngx_handle_read_event(pc->read, 0) != NGX_OK) {
         ngx_http_ws_deflate_tunnel_close(r);
-        return;
-    }
-
-    if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
-        ngx_http_ws_deflate_tunnel_close(r);
-        return;
     }
 }
 
@@ -249,37 +246,29 @@ ngx_http_ws_deflate_write_upstream(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     ngx_http_ws_deflate_tunnel_ctx_t   *tctx;
-    ngx_connection_t                   *c, *pc;
 
     tctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
     if (tctx == NULL || !tctx->initialized) {
         return;
     }
 
-    c = r->connection;
-    pc = u->peer.connection;
-
-    /* Try to flush any pending writes */
-    if (ngx_handle_write_event(pc->write, 0) != NGX_OK) {
+    if (ngx_handle_write_event(u->peer.connection->write, 0) != NGX_OK) {
         ngx_http_ws_deflate_tunnel_close(r);
-        return;
-    }
-
-    if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
-        ngx_http_ws_deflate_tunnel_close(r);
-        return;
     }
 }
 
 
-/* --- Request-level handlers (downstream events) --- */
+/* --- Request-level write handler: processes data FROM client, writes TO upstream --- */
+/* Called by ngx_http_run_posted_requests after ngx_http_upstream_handler.
+ * We read from client, decompress, and write to upstream. */
 
 static void
-ngx_http_ws_deflate_read_downstream(ngx_http_request_t *r)
+ngx_http_ws_deflate_write_downstream(ngx_http_request_t *r)
 {
     ngx_http_ws_deflate_tunnel_ctx_t   *tctx;
-    ngx_connection_t                   *c;
     ngx_http_upstream_t                *u;
+    ngx_connection_t                   *c;
+    ssize_t                             n;
 
     tctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
     if (tctx == NULL || !tctx->initialized) {
@@ -291,18 +280,32 @@ ngx_http_ws_deflate_read_downstream(ngx_http_request_t *r)
 
     c = r->connection;
 
-    /* Read from client */
-    ssize_t  n = c->recv(c, tctx->client_buf->last,
-                         tctx->client_buf->end - tctx->client_buf->last);
+    ngx_log_error(NGX_LOG_DEBUG, c->log, 0,
+                  "ws_deflate: write_downstream called");
 
-    if (n > 0) {
-        tctx->client_buf->last += n;
-        if (ngx_http_ws_deflate_process_data(tctx, c, u->peer.connection,
-                tctx->client_buf, 0) != NGX_OK)
-        {
+    n = c->recv(c, tctx->client_buf->last,
+                tctx->client_buf->end - tctx->client_buf->last);
+
+    if (n == NGX_ERROR || n == 0) {
+        ngx_http_ws_deflate_tunnel_close(r);
+        return;
+    }
+
+    if (n == NGX_AGAIN) {
+        if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
             ngx_http_ws_deflate_tunnel_close(r);
-            return;
         }
+        return;
+    }
+
+    tctx->client_buf->last += n;
+
+    /* Process client→upstream: decompress frames with RSV1=1 */
+    if (ngx_http_ws_deflate_process_data(tctx, c, u->peer.connection,
+            tctx->client_buf, 0) != NGX_OK)
+    {
+        ngx_http_ws_deflate_tunnel_close(r);
+        return;
     }
 
     if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
@@ -311,17 +314,51 @@ ngx_http_ws_deflate_read_downstream(ngx_http_request_t *r)
 }
 
 
+/* --- Request-level read handler (deferred client reads) --- */
+
 static void
-ngx_http_ws_deflate_write_downstream(ngx_http_request_t *r)
+ngx_http_ws_deflate_read_downstream(ngx_http_request_t *r)
 {
     ngx_http_ws_deflate_tunnel_ctx_t   *tctx;
+    ngx_http_upstream_t                *u;
+    ngx_connection_t                   *c;
+    ssize_t                             n;
 
     tctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
     if (tctx == NULL || !tctx->initialized) {
         return;
     }
 
-    if (ngx_handle_write_event(r->connection->write, 0) != NGX_OK) {
+    u = r->upstream;
+    if (u == NULL) return;
+
+    c = r->connection;
+
+    n = c->recv(c, tctx->client_buf->last,
+                tctx->client_buf->end - tctx->client_buf->last);
+
+    if (n == NGX_ERROR || n == 0) {
+        ngx_http_ws_deflate_tunnel_close(r);
+        return;
+    }
+
+    if (n == NGX_AGAIN) {
+        if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+            ngx_http_ws_deflate_tunnel_close(r);
+        }
+        return;
+    }
+
+    tctx->client_buf->last += n;
+
+    if (ngx_http_ws_deflate_process_data(tctx, c, u->peer.connection,
+            tctx->client_buf, 0) != NGX_OK)
+    {
+        ngx_http_ws_deflate_tunnel_close(r);
+        return;
+    }
+
+    if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
         ngx_http_ws_deflate_tunnel_close(r);
     }
 }
