@@ -22,28 +22,48 @@ def _wait_for_port(host: str, port: int, timeout: float = 15) -> bool:
     return False
 
 
-def _start_nginx(config_name: str):
-    config_path = TEST_DIR / config_name
+def _force_kill_nginx():
+    """Kill all nginx processes forcefully."""
+    subprocess.run(["pkill", "-9", "nginx"], capture_output=True, timeout=5)
+    subprocess.run(["pkill", "-9", "uvicorn"], capture_output=True, timeout=5)
+
+
+def _stop_nginx(prefix: str = "/tmp/nginx-ws-test"):
+    _force_kill_nginx()
     subprocess.run(
-        [NGINX_BIN, "-c", str(config_path)],
+        [NGINX_BIN, "-s", "stop", "-p", prefix],
+        capture_output=True, timeout=5,
+    )
+    _force_kill_nginx()
+
+
+def _prepare_prefix(prefix: str):
+    """Create nginx prefix directories (logs, temp dirs)."""
+    Path(prefix).mkdir(parents=True, exist_ok=True)
+    for d in ["logs", "client_body_temp", "proxy_temp", "fastcgi_temp",
+              "uwsgi_temp", "scgi_temp"]:
+        Path(prefix, d).mkdir(parents=True, exist_ok=True)
+
+
+def _start_nginx(config_name: str, prefix: str = "/tmp/nginx-ws-test",
+                 port: int = 8090):
+    config_path = TEST_DIR / config_name
+    _prepare_prefix(prefix)
+    subprocess.run(
+        [NGINX_BIN, "-c", str(config_path), "-p", prefix],
         check=True,
         capture_output=True,
     )
-
-
-def _stop_nginx(config_name: str):
-    config_path = TEST_DIR / config_name
-    subprocess.run(
-        [NGINX_BIN, "-s", "quit", "-c", str(config_path)],
-        capture_output=True,
-        timeout=10,
-    )
+    if not _wait_for_port("127.0.0.1", port):
+        _stop_nginx(prefix)
+        raise RuntimeError(f"nginx failed to start on port {port}")
 
 
 @pytest.fixture(scope="session")
 def backend_server():
+    venv_python = TEST_DIR / "venv" / "bin" / "python3"
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "ws_backend:app",
+        [str(venv_python), "-m", "uvicorn", "ws_backend:app",
          "--host", "127.0.0.1", "--port", "9001",
          "--log-level", "error"],
         cwd=TEST_DIR,
@@ -61,19 +81,15 @@ def backend_server():
 
 @pytest.fixture(scope="session")
 def nginx_server(backend_server):
-    _stop_nginx("nginx.conf")
-    _start_nginx("nginx.conf")
-    if not _wait_for_port("127.0.0.1", 8090):
-        raise RuntimeError("nginx failed to start on port 8090")
+    _stop_nginx()
+    _start_nginx("nginx.conf", port=8090)
     yield
-    _stop_nginx("nginx.conf")
+    _stop_nginx()
 
 
 @pytest.fixture(scope="session")
 def nginx_disabled_server(backend_server):
-    _stop_nginx("nginx-disabled.conf")
-    _start_nginx("nginx-disabled.conf")
-    if not _wait_for_port("127.0.0.1", 8091):
-        raise RuntimeError("nginx (disabled) failed to start on port 8091")
+    _stop_nginx("/tmp/nginx-ws-test-disabled")
+    _start_nginx("nginx-disabled.conf", "/tmp/nginx-ws-test-disabled", 8091)
     yield
-    _stop_nginx("nginx-disabled.conf")
+    _stop_nginx("/tmp/nginx-ws-test-disabled")

@@ -1,0 +1,4 @@
+tests/python/venv/
+tests/python/__pycache__/
+*.pyc
+.superpowers/sdd/*.diff
