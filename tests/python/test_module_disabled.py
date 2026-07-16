@@ -7,7 +7,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_without_module_loaded(nginx_disabled_server):
     """nginx on port 8091 has no load_module directive."""
-    client = WSTestClient("ws://127.0.0.1:8091/ws", compress=False)
+    client = WSTestClient("ws://127.0.0.1:8091/ws")
     await client.connect()
     await client.send_text("no module")
     response = await client.recv_text()
@@ -16,7 +16,7 @@ async def test_without_module_loaded(nginx_disabled_server):
 
 
 async def test_binary_without_module(nginx_disabled_server):
-    client = WSTestClient("ws://127.0.0.1:8091/ws-binary", compress=False)
+    client = WSTestClient("ws://127.0.0.1:8091/ws-binary")
     await client.connect()
     await client.send_bytes(b"\xca\xfe")
     response = await client.recv_bytes()
@@ -25,7 +25,7 @@ async def test_binary_without_module(nginx_disabled_server):
 
 
 async def test_multiple_messages_disabled(nginx_disabled_server):
-    client = WSTestClient("ws://127.0.0.1:8091/ws", compress=False)
+    client = WSTestClient("ws://127.0.0.1:8091/ws")
     await client.connect()
     for i in range(5):
         await client.send_text(f"d{i}")
