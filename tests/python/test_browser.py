@@ -97,3 +97,66 @@ def test_large_payload_ping_pong(nginx_server):
         """)
         assert result == 10_000, f"Expected 10000 bytes, got {result}"
         browser.close()
+
+
+def test_varying_payload_sizes(nginx_server):
+    """
+    Send messages of increasing sizes: 1, 10, 100, 1K, 10K, 100K, 500K bytes.
+    Verify each echo matches exactly.
+    No buffer tuning needed — the module handles it transparently.
+    """
+    from playwright.sync_api import sync_playwright
+
+    sizes = [1, 10, 100, 1000, 10_000, 100_000, 500_000]
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        # Build JS code that sends each payload and collects results
+        js_sends = "const payloads = [" + ",".join(
+            f'{{size:{s}, data:"A".repeat({s})}}' for s in sizes
+        ) + "];"
+
+        result = page.evaluate(f"""
+            async () => {{
+                {js_sends}
+                const ws = new WebSocket('ws://127.0.0.1:8090/ws');
+                const results = [];
+                let idx = 0;
+
+                await new Promise((resolve, reject) => {{
+                    ws.onopen = () => {{
+                        // Send first payload
+                        ws.send(payloads[0].data);
+                    }};
+                    ws.onmessage = (e) => {{
+                        results.push({{
+                            size: payloads[idx].size,
+                            len: e.data.length,
+                            ok: e.data === payloads[idx].data
+                        }});
+                        idx++;
+                        if (idx < payloads.length) {{
+                            ws.send(payloads[idx].data);
+                        }} else {{
+                            resolve(results);
+                        }}
+                    }};
+                    ws.onerror = (e) => reject(e.error?.message || 'ws error');
+                    setTimeout(() => reject('timeout'), 30000);
+                }});
+                return JSON.stringify(results);
+            }}
+        """)
+
+        import json
+        parsed = json.loads(result)
+        for item in parsed:
+            assert item["ok"], (
+                f"FAIL at size={item['size']}: "
+                f"expected len={item['size']}, got len={item['len']}"
+            )
+        print(f"\n  Payload sizes verified: {[s['size'] for s in parsed]}")
+        browser.close()
+
