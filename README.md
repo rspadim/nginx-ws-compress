@@ -197,6 +197,189 @@ http {
 
 ---
 
+## Exemplos de Configuração
+
+### 1. Mínimo — só ativar compressão
+
+```nginx
+load_module modules/ngx_http_ws_deflate_module.so;
+
+http {
+    server {
+        listen 80;
+
+        location /ws {
+            proxy_pass http://backend:9001;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            ws_deflate on;                   # só isso já basta
+        }
+    }
+}
+```
+
+### 2. Vários endpoints com compressão diferentes
+
+```nginx
+load_module modules/ngx_http_ws_deflate_module.so;
+
+http {
+    upstream prod_api  { server 10.0.1.10:9001; }
+    upstream chat_api  { server 10.0.1.11:9002; }
+    upstream iot_api   { server 10.0.1.12:9003; }
+
+    server {
+        listen 80;
+
+        # API crítica: máxima compressão (mais CPU)
+        location /api/ws/ {
+            proxy_pass http://prod_api;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+
+            ws_deflate on;
+            ws_deflate_compression_level 9;
+            ws_deflate_context_takeover on;
+        }
+
+        # Chat em tempo real: prioridade é latência
+        location /chat/ws/ {
+            proxy_pass http://chat_api;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+
+            ws_deflate on;
+            ws_deflate_compression_level 1;      # compressão rápida
+            ws_deflate_context_takeover off;      # menos memória
+        }
+
+        # IoT: dados binários pequenos, compressão quase não ajuda
+        location /iot/ws/ {
+            proxy_pass http://iot_api;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+
+            ws_deflate on;
+            ws_deflate_compression_level 1;
+        }
+    }
+}
+```
+
+### 3. Auto-detect + exceções
+
+Útil quando você tem muitos endpoints WebSocket e não quer configurar um por um:
+
+```nginx
+load_module modules/ngx_http_ws_deflate_module.so;
+
+http {
+    # Liga a compressão para QUALQUER WebSocket
+    ws_deflate_auto on;
+
+    # Mas desliga para alguns paths específicos
+    ws_deflate_except /healthcheck/;
+    ws_deflate_except /legacy/;
+    ws_deflate_except ~ /no-compress/;
+
+    server {
+        listen 80;
+
+        # Esses locations NÃO precisam de ws_deflate on —
+        # o modo auto já detecta WebSocket e comprime
+        location /chat/ {
+            proxy_pass http://chat_backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+
+        location /notifications/ {
+            proxy_pass http://notif_backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+
+        # Este vai ser excluído pelo ws_deflate_except
+        location /legacy/ {
+            proxy_pass http://old_backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+}
+```
+
+### 4. Proxy reverso com múltiplos backends
+
+```nginx
+load_module modules/ngx_http_ws_deflate_module.so;
+
+http {
+    upstream backend_modern  { server 10.0.0.1:8080; }
+    upstream backend_legacy  { server 10.0.0.2:8080; }
+
+    server {
+        listen 443 ssl;
+        ssl_certificate     /etc/ssl/certs/nginx.crt;
+        ssl_certificate_key /etc/ssl/private/nginx.key;
+
+        # Backend moderno: ele mesmo já comprime, nginx só passa
+        location /modern/ws/ {
+            proxy_pass http://backend_modern;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            # ws_deflate desligado — o backend cuida da compressão
+        }
+
+        # Backend legado: não comprime, nginx faz a ponte
+        location /legacy/ws/ {
+            proxy_pass http://backend_legacy;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+
+            ws_deflate on;
+            ws_deflate_compression_level 6;
+        }
+    }
+}
+```
+
+### 5. Docker Compose
+
+```yaml
+version: "3.8"
+services:
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ngx_http_ws_deflate_module.so:/etc/nginx/modules/ngx_http_ws_deflate_module.so:ro
+    ports:
+      - "8080:80"
+
+  backend:
+    image: python:3.12-slim
+    command: >
+      sh -c "pip install fastapi uvicorn &&
+             python -m uvicorn ws_backend:app --host 0.0.0.0 --port 9001"
+    ports:
+      - "9001:9001"
+```
+
+---
+
 ## Testing
 
 ### Unit Tests (C)
