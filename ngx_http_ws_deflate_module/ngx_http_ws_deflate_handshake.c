@@ -9,12 +9,12 @@
 ngx_int_t
 ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
 {
-    ngx_http_ws_deflate_loc_conf_t       *conf;
-    ngx_http_ws_deflate_tunnel_ctx_t     *ctx;
-    ngx_table_elt_t                      *ext;
-    ngx_list_part_t                      *part;
-    ngx_uint_t                            i;
-    ngx_table_elt_t                      *h;
+    ngx_http_ws_deflate_loc_conf_t        *conf;
+    ngx_http_ws_deflate_main_conf_t       *mcf;
+    ngx_http_ws_deflate_tunnel_ctx_t      *ctx;
+    ngx_table_elt_t                       *ext, *h;
+    ngx_list_part_t                       *part;
+    ngx_uint_t                             i;
 
     if (ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module) != NULL) {
         return NGX_DECLINED;
@@ -31,6 +31,33 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
                            (u_char *) "websocket", 9) != 0)
     {
         return NGX_DECLINED;
+    }
+
+    /* Check ws_deflate_except pattern */
+    mcf = ngx_http_get_module_main_conf(r, ngx_http_ws_deflate_module);
+    if (mcf != NULL && mcf->except_pattern.len > 0) {
+        u_char *pat = mcf->except_pattern.data;
+        size_t  pat_len = mcf->except_pattern.len;
+        ngx_uint_t is_regex = (pat_len > 1 && pat[0] == '~');
+
+        if (is_regex) {
+            /* Simple prefix match after ~ */
+            u_char *prefix = pat + 1;
+            size_t  prefix_len = pat_len - 1;
+            while (prefix_len > 0 && *prefix == ' ') { prefix++; prefix_len--; }
+            if (r->uri.len >= prefix_len
+                && ngx_strncmp(r->uri.data, prefix, prefix_len) == 0)
+            {
+                return NGX_DECLINED;
+            }
+        } else {
+            /* Prefix match */
+            if (r->uri.len >= pat_len
+                && ngx_strncmp(r->uri.data, pat, pat_len) == 0)
+            {
+                return NGX_DECLINED;
+            }
+        }
     }
 
     /* Find Sec-WebSocket-Extensions header */

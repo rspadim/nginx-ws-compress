@@ -12,8 +12,13 @@ typedef struct {
     ngx_int_t     compression_level;
     ngx_flag_t    context_takeover;
     size_t        chunk_size;
-    size_t        max_compress_len;    /* don't compress messages larger than this (0 = unlimited) */
+    size_t        max_compress_len;
 } ngx_http_ws_deflate_loc_conf_t;
+
+
+typedef struct {
+    ngx_str_t     except_pattern;
+} ngx_http_ws_deflate_main_conf_t;
 
 
 extern ngx_module_t ngx_http_ws_deflate_module;

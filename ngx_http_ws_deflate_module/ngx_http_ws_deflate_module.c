@@ -6,10 +6,14 @@
 
 
 static ngx_int_t ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf);
+static void *ngx_http_ws_deflate_create_main_conf(ngx_conf_t *cf);
 static void *ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_ws_deflate_header_filter(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ws_deflate_content_handler(ngx_http_request_t *r);
+
+static char *ngx_http_ws_deflate_except_slot(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 
 static ngx_http_output_header_filter_pt ngx_http_next_header_filter;
 
@@ -58,6 +62,13 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       offsetof(ngx_http_ws_deflate_loc_conf_t, max_compress_len),
       NULL },
 
+    { ngx_string("ws_deflate_except"),
+      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE12,
+      ngx_http_ws_deflate_except_slot,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      0,
+      NULL },
+
       ngx_null_command
 };
 
@@ -65,7 +76,7 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
 static ngx_http_module_t ngx_http_ws_deflate_module_ctx = {
     NULL,                                  /* preconfiguration */
     ngx_http_ws_deflate_postconfiguration, /* postconfiguration */
-    NULL,                                  /* create main configuration */
+    ngx_http_ws_deflate_create_main_conf,  /* create main configuration */
     NULL,                                  /* init main configuration */
     NULL,                                  /* create server configuration */
     NULL,                                  /* merge server configuration */
@@ -133,6 +144,13 @@ ngx_http_ws_deflate_content_handler(ngx_http_request_t *r)
 
 
 static void *
+ngx_http_ws_deflate_create_main_conf(ngx_conf_t *cf)
+{
+    return ngx_pcalloc(cf->pool, sizeof(ngx_http_ws_deflate_main_conf_t));
+}
+
+
+static void *
 ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf)
 {
     ngx_http_ws_deflate_loc_conf_t  *conf;
@@ -165,6 +183,39 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->context_takeover, prev->context_takeover, 1);
     ngx_conf_merge_size_value(conf->chunk_size, prev->chunk_size, 65536);
     ngx_conf_merge_size_value(conf->max_compress_len, prev->max_compress_len, 0);
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
+ngx_http_ws_deflate_except_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_ws_deflate_main_conf_t *mcf = conf;
+    ngx_str_t *value;
+
+    if (cf->args->nelts < 2) {
+        return NGX_CONF_ERROR;
+    }
+
+    value = cf->args->elts;
+
+    if (cf->args->nelts == 2) {
+        /* ws_deflate_except /path */
+        mcf->except_pattern = value[1];
+    } else {
+        /* ws_deflate_except ~ /regex/ — concatenate */
+        mcf->except_pattern.len = value[1].len + 1 + value[2].len;
+        mcf->except_pattern.data = ngx_pnalloc(cf->pool,
+            mcf->except_pattern.len + 1);
+        if (mcf->except_pattern.data == NULL) {
+            return NGX_CONF_ERROR;
+        }
+        ngx_memcpy(mcf->except_pattern.data, value[1].data, value[1].len);
+        mcf->except_pattern.data[value[1].len] = ' ';
+        ngx_memcpy(mcf->except_pattern.data + value[1].len + 1,
+                   value[2].data, value[2].len);
+    }
 
     return NGX_CONF_OK;
 }
