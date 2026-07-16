@@ -80,7 +80,7 @@ WebSocket frames.
 
 - nginx 1.9.11+ (dynamic module support)
 - zlib-ng (recommended) or zlib
-- C compiler (gcc/clang on Linux/macOS, MSVC on Windows)
+- C compiler (gcc/clang on Linux/macOS, gcc/msys2 on Windows)
 
 ### Linux / macOS
 
@@ -102,28 +102,25 @@ Or use the build script:
 ./scripts/build.sh
 ```
 
-### Windows (MSVC)
+### Windows (MSYS2)
 
-Open **x64 Native Tools Command Prompt for VS** and run:
+Open **MSYS2 MINGW64** shell and run:
 
-```cmd
+```bash
 git clone https://github.com/nginx/nginx.git
 cd nginx
 
-auto\configure ^
-  --with-cc=cl ^
-  --add-module=C:\path\to\nginx-ws-compress\ngx_http_ws_deflate_module
+./auto/configure \
+  --with-cc=gcc \
+  --add-module=/c/path/to/nginx-ws-compress/ngx_http_ws_deflate_module
 
-nmake -f objs\Makefile
+make -j$(nproc)
 ```
 
-Or use PowerShell:
+> **Note**: nginx on Windows does not support dynamic modules (`load_module`).
+> Use `--add-module` (static) instead of `--add-dynamic-module`.
 
-```powershell
-.\scripts\build.ps1
-```
-
-### Install
+### Install (Linux/macOS)
 
 ```bash
 sudo cp objs/ngx_http_ws_deflate_module.so /etc/nginx/modules/
