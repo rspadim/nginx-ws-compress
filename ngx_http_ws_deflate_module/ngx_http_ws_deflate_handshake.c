@@ -16,6 +16,10 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
     ngx_list_part_t                       *part;
     ngx_uint_t                             i;
 
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: request_handler called, upgrade=%p",
+                  r->headers_in.upgrade);
+
     if (ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module) != NULL) {
         return NGX_DECLINED;
     }
@@ -73,9 +77,9 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
             i = 0;
         }
 
-        if (h[i].key.len == 22
+        if (h[i].key.len == 24
             && ngx_strncasecmp(h[i].key.data,
-                               (u_char *) "sec-websocket-extensions", 22) == 0)
+                               (u_char *) "sec-websocket-extensions", 24) == 0)
         {
             ext = &h[i];
             break;
@@ -90,12 +94,12 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
     ngx_http_set_ctx(r, ctx, ngx_http_ws_deflate_module);
 
     if (ext != NULL) {
-        if (ngx_strstr(ext->value.data, (u_char *) "permessage-deflate") != NULL) {
-            ctx->client_deflate = 1;
-        }
+        ctx->client_deflate = 1;
         /* Remove extensions header so backend doesn't see it */
         ext->hash = 0;
     }
+
+    return NGX_DECLINED;
 
     return NGX_DECLINED;
 }
@@ -126,7 +130,7 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     /* Count this connection regardless of compression negotiation */
     ngx_ws_deflate_total_connections++;
 
-    /* Only add Sec-WebSocket-Extensions if client requested deflate */
+    /* Add diagnostic header if compression was negotiated */
     if (ctx != NULL && ctx->client_deflate) {
         h = ngx_list_push(&r->headers_out.headers);
         if (h == NULL) {
@@ -135,8 +139,7 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 
         h->hash = 1;
         ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
-        ngx_str_set(&h->value,
-            "permessage-deflate; client_max_window_bits=15; server_max_window_bits=15");
+        ngx_str_set(&h->value, "permessage-deflate");
 
         /* Add diagnostic header so clients can confirm compression is active */
         h = ngx_list_push(&r->headers_out.headers);
@@ -152,8 +155,7 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     }
 
     /* Install the tunnel to intercept WebSocket frames.
-     * Only installed when compression is negotiated by the client.
-     * Without compression, nginx native proxy pass-through is used. */
+     * Only installed when compression is negotiated by the client. */
     if (ctx != NULL && ctx->client_deflate) {
         if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
