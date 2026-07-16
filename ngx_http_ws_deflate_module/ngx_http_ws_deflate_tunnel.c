@@ -295,7 +295,7 @@ ngx_http_ws_deflate_process_client_data(
 
     log = tctx->client_connection->log;
 
-    /* Pass-through: no compression negotiated, just forward raw bytes */
+    /* Pass-through: no compression, just forward raw bytes */
     if (!tctx->client_deflate) {
         len = tctx->client_buf->last - tctx->client_buf->pos;
         if (len > 0) {
@@ -306,9 +306,6 @@ ngx_http_ws_deflate_process_client_data(
             }
             ngx_log_error(NGX_LOG_DEBUG, log, 0,
                           "ws_deflate: client→upstream %uz bytes (raw)", len);
-            ngx_ws_deflate_uncompressed_bytes += len;
-            ngx_ws_deflate_compressed_bytes += len;
-            ngx_ws_deflate_frames_processed++;
             tctx->client_buf->pos = tctx->client_buf->last;
         }
         return NGX_OK;
@@ -428,7 +425,7 @@ ngx_http_ws_deflate_process_upstream_data(
 
     log = tctx->upstream_connection->log;
 
-    /* Pass-through: no compression negotiated, just forward raw bytes */
+    /* Pass-through: no compression, just forward raw bytes */
     if (!tctx->client_deflate) {
         len = tctx->upstream_buf->last - tctx->upstream_buf->pos;
         if (len > 0) {
@@ -439,9 +436,6 @@ ngx_http_ws_deflate_process_upstream_data(
             }
             ngx_log_error(NGX_LOG_DEBUG, log, 0,
                           "ws_deflate: upstream→client %uz bytes (raw)", len);
-            ngx_ws_deflate_uncompressed_bytes += len;
-            ngx_ws_deflate_compressed_bytes += len;  /* no compression, same size */
-            ngx_ws_deflate_frames_processed++;
             tctx->upstream_buf->pos = tctx->upstream_buf->last;
         }
         return NGX_OK;
