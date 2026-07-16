@@ -30,13 +30,6 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       offsetof(ngx_http_ws_deflate_loc_conf_t, auto_detect),
       NULL },
 
-    { ngx_string("ws_deflate_except"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_ws_deflate_loc_conf_t, except_pattern),
-      NULL },
-
     { ngx_string("ws_deflate_compression_level"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
       ngx_conf_set_num_slot,
@@ -151,8 +144,6 @@ ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf)
 
     conf->enabled = NGX_CONF_UNSET;
     conf->auto_detect = NGX_CONF_UNSET;
-    conf->except_pattern.len = 0;
-    conf->except_pattern.data = NULL;
     conf->compression_level = NGX_CONF_UNSET;
     conf->context_takeover = NGX_CONF_UNSET;
     conf->chunk_size = NGX_CONF_UNSET_SIZE;
@@ -173,10 +164,7 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->compression_level, prev->compression_level, 6);
     ngx_conf_merge_value(conf->context_takeover, prev->context_takeover, 1);
     ngx_conf_merge_size_value(conf->chunk_size, prev->chunk_size, 65536);
-
-    if (conf->except_patterns == NULL) {
-        conf->except_patterns = prev->except_patterns;
-    }
+    ngx_conf_merge_size_value(conf->max_compress_len, prev->max_compress_len, 0);
 
     return NGX_CONF_OK;
 }
