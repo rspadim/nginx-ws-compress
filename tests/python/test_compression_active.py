@@ -28,8 +28,8 @@ def test_compression_reduces_wire_size(nginx_debug_server):
     """
     from pathlib import Path
 
-    # Clear previous log
-    log_path = Path("/tmp/nginx-ws-test-error.log")
+    # nginx_debug_server uses prefix /tmp/nginx-ws-test-debug
+    log_path = Path("/tmp/nginx-ws-test-debug/logs/error.log")
     if log_path.exists():
         log_path.write_text("")
 
@@ -79,7 +79,7 @@ def test_max_compress_len_respected(nginx_debug_server):
     """
     from pathlib import Path
 
-    log_path = Path("/tmp/nginx-ws-test-error.log")
+    log_path = Path("/tmp/nginx-ws-test-debug/logs/error.log")
     if log_path.exists():
         log_path.write_text("")
 
