@@ -8,9 +8,20 @@
 
 /* Cross-platform microsecond timer for latency tracking.
  * Linux/macOS: clock_gettime (POSIX, microsecond resolution).
- * Windows: GetTickCount64 (millisecond resolution, fallback). */
+ * Windows: QueryPerformanceCounter (high-resolution). */
 #if (NGX_WIN32)
-#define ngx_ws_gettime_us()  ((ngx_int_t)(GetTickCount64() * 1000))
+static ngx_int_t ngx_ws_gettime_us(void) {
+    static ngx_int_t  freq = 0;
+    static ngx_int_t  freq_init = 0;
+    LARGE_INTEGER  cnt, f;
+    if (!freq_init) {
+        QueryPerformanceFrequency(&f);
+        freq = (ngx_int_t)(f.QuadPart / 1000000);
+        freq_init = 1;
+    }
+    QueryPerformanceCounter(&cnt);
+    return (ngx_int_t)(cnt.QuadPart / freq);
+}
 #else
 #include <time.h>
 static ngx_int_t ngx_ws_gettime_us(void) {
