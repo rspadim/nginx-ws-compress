@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+env:
+  NGINX_VERSION: release-1.31.3
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout module
+      uses: actions/checkout@v4
+      with:
+        path: nginx-ws-compress
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential git libpcre3-dev libssl-dev \
+          autoconf automake libtool pkg-config \
+          python3 python3-pip python3-venv \
+          curl wget
+
+    - name: Install zlib-ng
+      run: |
+        git clone --depth 1 --branch develop https://github.com/zlib-ng/zlib-ng.git
+        cd zlib-ng
+        ./configure --prefix=/usr/local --zlib-compat
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+
+    - name: Clone nginx
+      run: |
+        git clone https://github.com/nginx/nginx.git nginx-src
+        cd nginx-src
+        git checkout ${{ env.NGINX_VERSION }}
+
+    - name: Configure nginx with module
+      run: |
+        cd nginx-src
+        ./auto/configure \
+          --with-compat \
+          --with-cc-opt="-I/usr/local/include" \
+          --with-ld-opt="-L/usr/local/lib" \
+          --add-dynamic-module=../nginx-ws-compress/ngx_http_ws_deflate_module
+
+    - name: Build module
+      run: |
+        cd nginx-src
+        make modules -j$(nproc)
+        ls -la objs/ngx_http_ws_deflate_module.so
+
+    - name: Install nginx + module
+      run: |
+        cd nginx-src
+        sudo make install
+        echo "nginx installed at $(which nginx)"
+
+    - name: Run C unit tests (frame parser)
+      run: |
+        cd nginx-ws-compress/tests/c
+        gcc -Wall -Wextra -g \
+          -I../../ngx_http_ws_deflate_module \
+          -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 \
+          -o test_frame test_frame.c \
+          ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_frame.c
+        ./test_frame
+
+    - name: Run C unit tests (compression)
+      run: |
+        cd nginx-ws-compress/tests/c
+        gcc -Wall -Wextra -g \
+          -I../../ngx_http_ws_deflate_module \
+          -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 \
+          -o test_compress test_compress.c \
+          ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_compress.c \
+          -lz
+        ./test_compress
+
+    - name: Setup Python venv
+      run: |
+        cd nginx-ws-compress/tests/python
+        python3 -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        # Install Playwright browsers (skip for faster CI if needed)
+        playwright install chromium 2>/dev/null || true
+
+    - name: Run integration tests
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/ -v --asyncio-mode=auto \
+          -k "not browser" \
+          --timeout=60
+
+    - name: Run browser test (Playwright)
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_browser.py -v --asyncio-mode=auto \
+          --timeout=30
+      continue-on-error: true
+
+    - name: Run load test
+      run: |
+        cd nginx-ws-compress
+        source tests/python/venv/bin/activate
+        python -m pytest tests/python/test_load.py -v --asyncio-mode=auto \
+          --timeout=120
+      continue-on-error: true
+
+  # Minimal build-only job for quick feedback
+  build-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Checkout module
+      uses: actions/checkout@v4
+      with:
+        path: nginx-ws-compress
+
+    - name: Install deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential git libpcre3-dev libssl-dev
+
+    - name: Install zlib-ng
+      run: |
+        git clone --depth 1 --branch develop https://github.com/zlib-ng/zlib-ng.git
+        cd zlib-ng
+        ./configure --prefix=/usr/local --zlib-compat
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+
+    - name: Clone nginx + build module
+      run: |
+        git clone https://github.com/nginx/nginx.git nginx-src
+        cd nginx-src
+        git checkout ${{ env.NGINX_VERSION }}
+        ./auto/configure \
+          --with-compat \
+          --with-cc-opt="-I/usr/local/include" \
+          --with-ld-opt="-L/usr/local/lib" \
+          --add-dynamic-module=../nginx-ws-compress/ngx_http_ws_deflate_module
+        make modules -j$(nproc)
+        echo "=== Module built ==="
+        ls -la objs/ngx_http_ws_deflate_module.so
+        file objs/ngx_http_ws_deflate_module.so
