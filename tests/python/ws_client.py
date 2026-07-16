@@ -2,16 +2,12 @@ import websockets
 
 
 class WSTestClient:
-    def __init__(self, uri: str, compress: bool = True):
+    def __init__(self, uri: str):
         self.uri = uri
-        self.compress = compress
         self.conn = None
 
     async def connect(self):
-        kwargs = {}
-        if not self.compress:
-            kwargs["compress"] = None
-        self.conn = await websockets.connect(self.uri, **kwargs)
+        self.conn = await websockets.connect(self.uri, compression=None)
         return self.conn
 
     async def send_text(self, text: str):

@@ -6,7 +6,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_text_message(nginx_server):
-    client = WSTestClient("ws://127.0.0.1:8090/ws", compress=True)
+    client = WSTestClient("ws://127.0.0.1:8090/ws")
     await client.connect()
     await client.send_text("hello world")
     response = await client.recv_text()
@@ -15,7 +15,7 @@ async def test_text_message(nginx_server):
 
 
 async def test_binary_message(nginx_server):
-    client = WSTestClient("ws://127.0.0.1:8090/ws-binary", compress=True)
+    client = WSTestClient("ws://127.0.0.1:8090/ws-binary")
     payload = bytes(range(256))
     await client.connect()
     await client.send_bytes(payload)
@@ -25,7 +25,7 @@ async def test_binary_message(nginx_server):
 
 
 async def test_large_payload(nginx_server):
-    client = WSTestClient("ws://127.0.0.1:8090/ws", compress=True)
+    client = WSTestClient("ws://127.0.0.1:8090/ws")
     large = "A" * 100_000
     await client.connect()
     await client.send_text(large)
@@ -36,7 +36,7 @@ async def test_large_payload(nginx_server):
 
 
 async def test_no_compress_location(nginx_server):
-    client = WSTestClient("ws://127.0.0.1:8090/no-compress", compress=False)
+    client = WSTestClient("ws://127.0.0.1:8090/no-compress")
     await client.connect()
     await client.send_text("passthrough")
     response = await client.recv_text()
@@ -45,7 +45,7 @@ async def test_no_compress_location(nginx_server):
 
 
 async def test_sequential_messages(nginx_server):
-    client = WSTestClient("ws://127.0.0.1:8090/ws", compress=True)
+    client = WSTestClient("ws://127.0.0.1:8090/ws")
     await client.connect()
     for i in range(10):
         msg = f"seq-{i}"
@@ -56,8 +56,8 @@ async def test_sequential_messages(nginx_server):
 
 
 async def test_mixed_text_and_binary(nginx_server):
-    client_text = WSTestClient("ws://127.0.0.1:8090/ws", compress=True)
-    client_bin = WSTestClient("ws://127.0.0.1:8090/ws-binary", compress=True)
+    client_text = WSTestClient("ws://127.0.0.1:8090/ws")
+    client_bin = WSTestClient("ws://127.0.0.1:8090/ws-binary")
     await client_text.connect()
     await client_bin.connect()
     await client_text.send_text("ping")
