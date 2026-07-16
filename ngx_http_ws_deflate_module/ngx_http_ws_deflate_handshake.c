@@ -152,14 +152,12 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     }
 
     /* Install the tunnel to intercept WebSocket frames.
-     * Only needed when compression is negotiated.
-     * Without compression, nginx native proxy pass-through works fine. */
-    if (ctx != NULL && ctx->client_deflate) {
-        if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "ws_deflate: failed to install tunnel");
-            return NGX_ERROR;
-        }
+     * Always installed when enabled, even without compression,
+     * so we can count frames and bytes for the status page. */
+    if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "ws_deflate: failed to install tunnel");
+        return NGX_ERROR;
     }
 
     return NGX_OK;

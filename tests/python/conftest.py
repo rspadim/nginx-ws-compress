@@ -11,6 +11,27 @@ NGINX_BIN = "/usr/local/nginx/sbin/nginx"
 TEST_DIR = Path(__file__).parent
 
 
+def _print_status_metrics(port: int = 8090, label: str = ""):
+    """Fetch /ws_deflate_status and print a summary line."""
+    try:
+        import httpx
+        resp = httpx.get(f"http://127.0.0.1:{port}/ws_deflate_status",
+                         timeout=3.0)
+        if resp.status_code == 200:
+            ws = resp.json().get("ws_deflate", {})
+            conn = ws.get("connections_total", 0)
+            active = ws.get("connections_active", 0)
+            frames = ws.get("frames_processed", 0)
+            ratio = ws.get("compression_ratio_pct", 0)
+            lat = ws.get("latency_us", {}).get("mean", 0)
+            print(f"  [status{label}] "
+                  f"conn={conn} active={active} "
+                  f"frames={frames} ratio={ratio}% "
+                  f"lat={lat}µs")
+    except Exception as e:
+        print(f"  [status{label}] unavailable ({e})")
+
+
 def _wait_for_port(host: str, port: int, timeout: float = 15) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -84,6 +105,7 @@ def nginx_server(backend_server):
     _stop_nginx()
     _start_nginx("nginx.conf", port=8090)
     yield
+    _print_status_metrics(8090)
     _stop_nginx()
 
 
