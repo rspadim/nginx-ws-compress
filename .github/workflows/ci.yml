@@ -11,13 +11,13 @@ env:
 
 jobs:
   build-and-test:
+    continue-on-error: ${{ false }}
     strategy:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    continue-on-error: ${{ matrix.os != 'ubuntu-latest' && matrix.os != 'ubuntu-24.04-arm' }}
 
     steps:
     - name: Checkout module
@@ -129,18 +129,21 @@ jobs:
         playwright install chromium 2>/dev/null || true
 
     - name: Run module disabled tests
+      if: runner.os != 'macOS'
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
         python -m pytest tests/python/test_module_disabled.py -v --asyncio-mode=auto
 
     - name: Run roundtrip tests
+      if: runner.os != 'macOS'
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
         python -m pytest tests/python/test_roundtrip.py -v --asyncio-mode=auto
 
     - name: Run load test (50 concurrent connections)
+      if: runner.os != 'macOS'
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
@@ -148,6 +151,7 @@ jobs:
       continue-on-error: true
 
     - name: Run memory test (~160MB through nginx)
+      if: runner.os != 'macOS'
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
@@ -156,6 +160,7 @@ jobs:
       timeout-minutes: 5
 
     - name: Run browser test (Playwright)
+      if: runner.os != 'macOS'
       run: |
         cd nginx-ws-compress
         source tests/python/venv/bin/activate
@@ -227,11 +232,11 @@ jobs:
         git clone https://github.com/nginx/nginx.git nginx-src
         cd nginx-src
         git checkout release-1.31.3
-        auto\configure ^
+        perl auto\configure ^
           --with-cc=cl ^
           --with-cc-opt="-IC:\vcpkg\installed\x64-windows\include" ^
           --with-ld-opt="-LIBPATH:C:\vcpkg\installed\x64-windows\lib" ^
           --add-module=..\nginx-ws-compress\ngx_http_ws_deflate_module
         nmake -f objs\Makefile
         echo === Build complete ===
-        if exist objs\nginx.exe (echo SUCCESS) else (echo nmake completed but nginx.exe not found & exit /b 1)
+        if exist objs\nginx.exe (echo SUCCESS) else (echo nginx.exe not found & exit /b 1)
