@@ -62,6 +62,37 @@ async def test_long_stream_memory_stable(nginx_server):
 
     await client.close()
 
+    # Check status page metrics to confirm compression was active
+    await _check_status_metrics()
+
+
+async def _check_status_metrics():
+    """
+    Fetch /ws_deflate_status and verify compression counters.
+    This confirms the status page works and compression is active.
+    """
+    import httpx
+    async with httpx.AsyncClient() as http:
+        resp = await http.get("http://127.0.0.1:8090/ws_deflate_status",
+                              timeout=5.0)
+        assert resp.status_code == 200, f"Status page returned {resp.status_code}"
+        data = resp.json()
+        ws = data.get("ws_deflate", {})
+
+        print(f"\n  Status page metrics:")
+        print(f"    connections_total:   {ws.get('connections_total', 'N/A')}")
+        print(f"    connections_active:  {ws.get('connections_active', 'N/A')}")
+        print(f"    frames_processed:    {ws.get('frames_processed', 'N/A')}")
+        print(f"    bytes_uncompressed:  {ws.get('bytes_uncompressed', 'N/A')}")
+        print(f"    bytes_compressed:    {ws.get('bytes_compressed', 'N/A')}")
+        print(f"    compression_ratio:   {ws.get('compression_ratio_pct', 'N/A')}%")
+
+        assert ws.get("connections_total", 0) > 0, "No connections recorded"
+        assert ws.get("frames_processed", 0) > 0, "No frames processed"
+        assert ws.get("compression_ratio_pct", 0) > 0, (
+            "Compression ratio is 0% — compression may not be active"
+        )
+
 
 def _get_nginx_rss() -> int:
     """Get RSS of nginx worker processes in bytes."""
