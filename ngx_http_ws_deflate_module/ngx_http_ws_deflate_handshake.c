@@ -100,8 +100,6 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
     }
 
     return NGX_DECLINED;
-
-    return NGX_DECLINED;
 }
 
 
