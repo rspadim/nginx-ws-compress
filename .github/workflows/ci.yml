@@ -72,6 +72,8 @@ jobs:
         cd nginx-src
         ./auto/configure \
           --with-compat \
+          --with-debug \
+          --with-debug \
           --with-cc-opt="-I/usr/local/include" \
           --with-ld-opt="-L/usr/local/lib" \
           --add-dynamic-module=../nginx-ws-compress/ngx_http_ws_deflate_module
@@ -213,6 +215,7 @@ jobs:
         git checkout ${{ env.NGINX_VERSION }}
         ./auto/configure \
           --with-compat \
+          --with-debug \
           --with-cc-opt="-I/usr/local/include" \
           --with-ld-opt="-L/usr/local/lib" \
           --add-dynamic-module=../nginx-ws-compress/ngx_http_ws_deflate_module
