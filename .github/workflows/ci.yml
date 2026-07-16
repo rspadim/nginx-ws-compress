@@ -221,14 +221,20 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
 
     - name: Install dependencies (pcre2, zlib)
-      shell: cmd
+      shell: powershell
       run: |
-        curl -sLO https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.tar.gz
-        tar -C objs --transform "s/pcre2-10.44/pcre/" -xzf pcre2-10.44.tar.gz
-        echo #include ^<stdint.h^> > objs\pcre\src\inttypes.h
-        curl -sLO https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
-        tar -C objs --transform "s/zlib-1.3.1/zlib/" -xzf zlib-1.3.1.tar.gz
-      working-directory: nginx-ws-compress
+        cd nginx-ws-compress
+        New-Item -ItemType Directory -Path objs\lib -Force
+        # Download PCRE2
+        curl.exe -sLO https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.tar.gz
+        tar -xzf pcre2-10.44.tar.gz -C objs\lib
+        Rename-Item objs\lib\pcre2-10.44 objs\lib\pcre
+        # Download zlib
+        curl.exe -sLO https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+        tar -xzf zlib-1.3.1.tar.gz -C objs\lib
+        Rename-Item objs\lib\zlib-1.3.1 objs\lib\zlib
+        # Create inttypes.h stub for PCRE2
+        Set-Content -Path objs\lib\pcre\src\inttypes.h -Value '#include <stdint.h>'
 
     - name: Clone nginx
       shell: cmd
@@ -251,9 +257,9 @@ jobs:
           --sbin-path=nginx.exe ^
           --http-client-body-temp-path=temp/client_body_temp ^
           --http-proxy-temp-path=temp/proxy_temp ^
-          --with-cc-opt="-DFD_SETSIZE=1024 -I../objs/pcre -I../objs/zlib" ^
-          --with-pcre=../objs/pcre ^
-          --with-zlib=../objs/zlib ^
+          --with-cc-opt="-DFD_SETSIZE=1024" ^
+          --with-pcre=../nginx-ws-compress/objs/lib/pcre ^
+          --with-zlib=../nginx-ws-compress/objs/lib/zlib ^
           --add-module=../nginx-ws-compress/ngx_http_ws_deflate_module
         nmake -f objs\Makefile
         if exist objs\nginx.exe (echo SUCCESS) else (echo nginx.exe not found & exit /b 1)
