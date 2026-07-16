@@ -1,7 +1,7 @@
 # nginx WebSocket per-message Deflate Module
 
 [![CI](https://github.com/rspadim/nginx-ws-compress/actions/workflows/ci.yml/badge.svg)](https://github.com/rspadim/nginx-ws-compress/actions/workflows/ci.yml)
-[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-blue)](https://github.com/rspadim/nginx-ws-compress/actions)
+[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64%20%7C%20arm%20%7C%20ppc%20%7C%20s390x-blue)](https://nginx.org/en/#tested_os_and_platforms)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 
 **ngx_http_ws_deflate_module** — Dynamic nginx module that enables WebSocket
@@ -460,22 +460,36 @@ ngx_http_ws_deflate_module/
 
 ## Platforms
 
-The module is written in portable C and compiles on any architecture
-supported by nginx. CI-tested:
+The module is written in portable C (no assembly) and compiles on **any
+architecture nginx supports**:
 
-| Architecture | Status |
+| Architecture | Examples | CI |
+|---|---|---|
+| **x86** (32-bit) | i386, IA-32 | — |
+| **x86_64** (64-bit) | AMD64, Intel 64 | ✅ Full |
+| **ARM** (32-bit) | armv6l, armv7l | — |
+| **ARM64** | AArch64, Apple Silicon | ✅ Build + tests |
+| **PowerPC** | ppc, ppc64, ppc64le | — |
+| **IBM S/390** | s390x | — |
+| **SPARC** | sun4u, sun4v | — |
+| **IA-64** | Itanium | — |
+
+| OS | Architectures |
 |---|---|
-| **amd64** (x86_64) | ✅ Full CI (build + tests + browser + load) |
-| **arm64** (AArch64) | ✅ Build + C tests + integration tests |
+| Linux | all above |
+| FreeBSD | x86, x86_64, ppc, ppc64 |
+| macOS | x86_64, ARM64 (Apple Silicon) |
+| Solaris | x86, x86_64, SPARC |
+| AIX | PowerPC |
+| HP-UX | IA-64 |
+| Windows | x86, x86_64, ARM64 |
 
-To build on any platform, the same commands apply:
+To build on any platform:
 
 ```bash
 ./auto/configure --add-dynamic-module=path/to/ngx_http_ws_deflate_module
 make modules
 ```
-
-No platform-specific code or assembly — pure C with zlib.
 
 ---
 
