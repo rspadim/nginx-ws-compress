@@ -116,11 +116,39 @@ async def main():
         os.makedirs(f"{prefix}/{d}", exist_ok=True)
 
     nginx_conf = str(Path(__file__).parent / "nginx.conf")
-    subprocess.run(
-        ["/usr/local/nginx/sbin/nginx", "-c", nginx_conf, "-p", prefix],
-        capture_output=True,
+
+    # Verify config before starting
+    result = subprocess.run(
+        ["/usr/local/nginx/sbin/nginx", "-c", nginx_conf, "-p", prefix, "-t"],
+        capture_output=True, text=True,
     )
-    time.sleep(1)
+    if result.returncode != 0:
+        print(f"nginx config test failed:\n{result.stderr}")
+        sys.exit(1)
+    print(f"nginx config test: OK")
+
+    result = subprocess.run(
+        ["/usr/local/nginx/sbin/nginx", "-c", nginx_conf, "-p", prefix],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"nginx start failed:\n{result.stderr}")
+        sys.exit(1)
+
+    # Wait for nginx to be ready
+    for i in range(10):
+        r = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             "http://127.0.0.1:8090/"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.stdout.strip() != "000":
+            print(f"nginx ready (HTTP {r.stdout.strip()})")
+            break
+        time.sleep(1)
+    else:
+        print("nginx failed to start in time")
+        sys.exit(1)
 
     mem_start = get_nginx_mem()
     print(f"nginx RSS start: {mem_start / 1024 / 1024:.1f} MB\n")
