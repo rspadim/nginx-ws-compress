@@ -70,6 +70,9 @@ jobs:
         cd nginx-ws-compress/tests/c
         gcc -Wall -Wextra -g \
           -I../../ngx_http_ws_deflate_module \
+          -I../../nginx-src/src/core \
+          -I../../nginx-src/src/os/unix \
+          -I../../nginx-src/objs \
           -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 \
           -o test_frame test_frame.c \
           ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_frame.c
@@ -80,6 +83,9 @@ jobs:
         cd nginx-ws-compress/tests/c
         gcc -Wall -Wextra -g \
           -I../../ngx_http_ws_deflate_module \
+          -I../../nginx-src/src/core \
+          -I../../nginx-src/src/os/unix \
+          -I../../nginx-src/objs \
           -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 \
           -o test_compress test_compress.c \
           ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_compress.c \
