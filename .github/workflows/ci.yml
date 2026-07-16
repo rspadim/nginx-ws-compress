@@ -216,20 +216,22 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
 
     - name: Install zlib-ng via vcpkg
+      shell: cmd
       run: |
         vcpkg install zlib-ng --triplet x64-windows
-        echo "VCPKG_ROOT=C:\vcpkg" >> %GITHUB_ENV%
+        echo VCPKG_ROOT=C:\vcpkg>> %GITHUB_ENV%
 
     - name: Clone nginx + build module (static)
+      shell: cmd
       run: |
         git clone https://github.com/nginx/nginx.git nginx-src
         cd nginx-src
         git checkout release-1.31.3
         auto\configure ^
           --with-cc=cl ^
-          --with-cc-opt="-I C:\vcpkg\installed\x64-windows\include" ^
+          --with-cc-opt="-IC:\vcpkg\installed\x64-windows\include" ^
           --with-ld-opt="-LIBPATH:C:\vcpkg\installed\x64-windows\lib" ^
           --add-module=..\nginx-ws-compress\ngx_http_ws_deflate_module
         nmake -f objs\Makefile
-        echo "=== Build complete ==="
+        echo === Build complete ===
         dir objs\*.exe /b
