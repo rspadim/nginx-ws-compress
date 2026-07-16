@@ -14,18 +14,9 @@ typedef struct {
     size_t        chunk_size;
 } ngx_http_ws_deflate_loc_conf_t;
 
-
-typedef struct {
-    ngx_flag_t    auto_detect;
-    ngx_array_t  *except_patterns;
-} ngx_http_ws_deflate_srv_conf_t;
-
-
 static ngx_int_t ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf);
 static void *ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
-static void *ngx_http_ws_deflate_create_srv_conf(ngx_conf_t *cf);
-static char *ngx_http_ws_deflate_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_ws_deflate_header_filter(ngx_http_request_t *r);
 
 static ngx_http_output_header_filter_pt ngx_http_next_header_filter;
@@ -41,17 +32,17 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       NULL },
 
     { ngx_string("ws_deflate_auto"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_FLAG,
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_FLAG,
       ngx_conf_set_flag_slot,
-      NGX_HTTP_SRV_CONF_OFFSET,
-      offsetof(ngx_http_ws_deflate_srv_conf_t, auto_detect),
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ws_deflate_loc_conf_t, auto_detect),
       NULL },
 
     { ngx_string("ws_deflate_except"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
       ngx_conf_set_str_array_slot,
-      NGX_HTTP_SRV_CONF_OFFSET,
-      offsetof(ngx_http_ws_deflate_srv_conf_t, except_patterns),
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ws_deflate_loc_conf_t, except_patterns),
       NULL },
 
     { ngx_string("ws_deflate_compression_level"),
@@ -84,8 +75,8 @@ static ngx_http_module_t ngx_http_ws_deflate_module_ctx = {
     ngx_http_ws_deflate_postconfiguration, /* postconfiguration */
     NULL,                                  /* create main configuration */
     NULL,                                  /* init main configuration */
-    ngx_http_ws_deflate_create_srv_conf,   /* create server configuration */
-    ngx_http_ws_deflate_merge_srv_conf,    /* merge server configuration */
+    NULL,                                  /* create server configuration */
+    NULL,                                  /* merge server configuration */
     ngx_http_ws_deflate_create_loc_conf,   /* create location configuration */
     ngx_http_ws_deflate_merge_loc_conf     /* merge location configuration */
 };
@@ -125,39 +116,6 @@ ngx_http_ws_deflate_header_filter(ngx_http_request_t *r)
     }
 
     return ngx_http_next_header_filter(r);
-}
-
-
-static void *
-ngx_http_ws_deflate_create_srv_conf(ngx_conf_t *cf)
-{
-    ngx_http_ws_deflate_srv_conf_t  *conf;
-
-    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_ws_deflate_srv_conf_t));
-    if (conf == NULL) {
-        return NULL;
-    }
-
-    conf->auto_detect = NGX_CONF_UNSET;
-    conf->except_patterns = NULL;
-
-    return conf;
-}
-
-
-static char *
-ngx_http_ws_deflate_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
-{
-    ngx_http_ws_deflate_srv_conf_t *prev = parent;
-    ngx_http_ws_deflate_srv_conf_t *conf = child;
-
-    ngx_conf_merge_value(conf->auto_detect, prev->auto_detect, 0);
-
-    if (conf->except_patterns == NULL) {
-        conf->except_patterns = prev->except_patterns;
-    }
-
-    return NGX_CONF_OK;
 }
 
 
