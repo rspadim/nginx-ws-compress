@@ -63,7 +63,8 @@ jobs:
       run: |
         cd nginx-src
         sudo make install
-        echo "nginx installed at $(which nginx)"
+        echo "nginx binary: $(/usr/local/nginx/sbin/nginx -v 2>&1)"
+        echo "module: $(ls -la /usr/local/nginx/modules/ngx_http_ws_deflate_module.so)"
 
     - name: Run C unit tests (frame parser)
       run: |

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-NGINX_BIN = shutil.which("nginx") or "/usr/local/nginx/sbin/nginx"
+NGINX_BIN = "/usr/local/nginx/sbin/nginx"
 TEST_DIR = Path(__file__).parent
 
 
