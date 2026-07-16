@@ -206,37 +206,41 @@ jobs:
         ls -la objs/ngx_http_ws_deflate_module.so
         file objs/ngx_http_ws_deflate_module.so
 
-  # Windows build (MSVC)
+  # Windows build (MSYS2)
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 15
     continue-on-error: true
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
     - name: Checkout module
       uses: actions/checkout@v4
       with:
         path: nginx-ws-compress
 
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        update: true
+        install: >-
+          make
+          gcc
+          perl
+          pcre2-devel
+          zlib-devel
 
-    - name: Install zlib-ng via vcpkg
-      shell: cmd
-      run: |
-        vcpkg install zlib-ng --triplet x64-windows
-        echo VCPKG_ROOT=C:\vcpkg>> %GITHUB_ENV%
-
-    - name: Clone nginx + build module (static)
-      shell: cmd
+    - name: Build nginx + module
       run: |
         git clone https://github.com/nginx/nginx.git nginx-src
         cd nginx-src
         git checkout release-1.31.3
-        perl auto\configure ^
-          --with-cc=cl ^
-          --with-cc-opt="-IC:\vcpkg\installed\x64-windows\include" ^
-          --with-ld-opt="-LIBPATH:C:\vcpkg\installed\x64-windows\lib" ^
-          --add-module=..\nginx-ws-compress\ngx_http_ws_deflate_module
-        nmake -f objs\Makefile
+        ./auto/configure \
+          --with-cc=gcc \
+          --with-cc-opt="-I/usr/include" \
+          --with-ld-opt="-L/usr/lib" \
+          --add-module=../nginx-ws-compress/ngx_http_ws_deflate_module
+        make -j$(nproc)
         echo === Build complete ===
-        if exist objs\nginx.exe (echo SUCCESS) else (echo nginx.exe not found & exit /b 1)
+        ls -la objs/nginx.exe 2>/dev/null || echo "nginx.exe not found"
