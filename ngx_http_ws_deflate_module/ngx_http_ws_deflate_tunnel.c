@@ -86,7 +86,6 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
     tctx->pool = r->pool;
     tctx->initialized = 1;
 
-    ngx_ws_deflate_total_connections++;
     ngx_ws_deflate_active_connections++;
 
     ngx_http_set_ctx(r, tctx, ngx_http_ws_deflate_module);

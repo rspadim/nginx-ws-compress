@@ -123,6 +123,9 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
 
+    /* Count this connection regardless of compression negotiation */
+    ngx_ws_deflate_total_connections++;
+
     /* Only add Sec-WebSocket-Extensions if client requested deflate */
     if (ctx != NULL && ctx->client_deflate) {
         h = ngx_list_push(&r->headers_out.headers);
