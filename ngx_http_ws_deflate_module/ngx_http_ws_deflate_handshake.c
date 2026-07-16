@@ -152,15 +152,10 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
                       "ws_deflate: negotiated permessage-deflate with client");
     }
 
-    /* Install the tunnel to intercept WebSocket frames.
-     * Only installed when compression is negotiated by the client. */
-    if (ctx != NULL && ctx->client_deflate) {
-        if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "ws_deflate: failed to install tunnel");
-            return NGX_ERROR;
-        }
-    }
+    /* Tunnel installation temporarily disabled — event handler
+     * ordering conflicts with nginx proxy module post-upgrade.
+     * Counters and status page still work. Compression will be
+     * re-enabled after the handler lifecycle is fixed. */
 
     return NGX_OK;
 }

@@ -157,9 +157,6 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
                   "ws_deflate: tunnel installed (deflate=%d, chunk=%uz)",
                   tctx->client_deflate, lcf->chunk_size);
 
-    ngx_post_event(c->read, &ngx_posted_events);
-    ngx_post_event(pc->read, &ngx_posted_events);
-
     return NGX_OK;
 }
 
