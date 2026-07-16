@@ -13,6 +13,7 @@ typedef struct {
     ngx_flag_t    context_takeover;
     size_t        chunk_size;
     size_t        max_compress_len;
+    ngx_flag_t    status_enabled;
 } ngx_http_ws_deflate_loc_conf_t;
 
 

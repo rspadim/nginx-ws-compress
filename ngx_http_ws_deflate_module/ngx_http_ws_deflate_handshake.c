@@ -132,9 +132,17 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
 
         h->hash = 1;
         ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
-        /* Respond with supported parameters per RFC 7692 */
         ngx_str_set(&h->value,
             "permessage-deflate; client_max_window_bits=15; server_max_window_bits=15");
+
+        /* Add diagnostic header so clients can confirm compression is active */
+        h = ngx_list_push(&r->headers_out.headers);
+        if (h == NULL) {
+            return NGX_ERROR;
+        }
+        h->hash = 1;
+        ngx_str_set(&h->key, "X-WS-Deflate");
+        ngx_str_set(&h->value, "active");
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "ws_deflate: negotiated permessage-deflate with client");

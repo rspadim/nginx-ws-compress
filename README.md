@@ -165,7 +165,9 @@ http {
 | `ws_deflate_except` | http, server | — | Exclude paths from auto-detect |
 | `ws_deflate_compression_level` | http, server, location | `6` | zlib level (1-9) |
 | `ws_deflate_context_takeover` | http, server, location | `on` | Keep zlib context between messages |
-| `ws_deflate_chunk_size` | http, server, location | `4096` | Internal buffer size |
+| `ws_deflate_chunk_size` | http, server, location | `65536` | Internal buffer size |
+| `ws_deflate_max_compress_len` | http, server, location | `0` | Skip compression for messages larger than this (0 = unlimited) |
+| `ws_deflate_status` | location | `off` | Enable JSON status page at this location |
 
 ### Full Example
 
@@ -398,6 +400,49 @@ services:
     ports:
       - "9001:9001"
 ```
+
+## Status Page
+
+The module provides a JSON status page (similar to nginx's `stub_status`)
+to monitor compression metrics in real time.
+
+### Configuration
+
+```nginx
+location /ws_deflate_status {
+    ws_deflate_status on;
+}
+```
+
+### Example Output
+
+```json
+{
+  "ws_deflate": {
+    "connections_total": 42,
+    "connections_active": 3,
+    "frames_processed": 15234,
+    "bytes_uncompressed": 104857600,
+    "bytes_compressed": 12345678,
+    "compression_ratio_pct": 88,
+    "status": "active"
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `connections_total` | Total WebSocket connections since nginx started |
+| `connections_active` | Currently active WebSocket connections |
+| `frames_processed` | Total frames compressed/decompressed |
+| `bytes_uncompressed` | Original bytes before compression |
+| `bytes_compressed` | Bytes after compression |
+| `compression_ratio_pct` | Space savings percent (higher = better) |
+| `status` | Always `"active"` when module is loaded |
+
+If `compression_ratio_pct` is 0 after active use, compression is not
+being negotiated — check that the client sends
+`Sec-WebSocket-Extensions: permessage-deflate`.
 
 ---
 

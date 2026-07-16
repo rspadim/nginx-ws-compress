@@ -3,6 +3,7 @@
 #include <ngx_http.h>
 
 #include "ngx_http_ws_deflate_handshake.h"
+#include "ngx_http_ws_deflate_tunnel.h"
 
 
 static ngx_int_t ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf);
@@ -11,6 +12,7 @@ static void *ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_ws_deflate_header_filter(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ws_deflate_content_handler(ngx_http_request_t *r);
+static ngx_int_t ngx_http_ws_deflate_status_handler(ngx_http_request_t *r);
 
 static char *ngx_http_ws_deflate_except_slot(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
@@ -60,6 +62,13 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       ngx_conf_set_size_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_ws_deflate_loc_conf_t, max_compress_len),
+      NULL },
+
+    { ngx_string("ws_deflate_status"),
+      NGX_HTTP_LOC_CONF | NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ws_deflate_loc_conf_t, status_enabled),
       NULL },
 
     { ngx_string("ws_deflate_except"),
@@ -119,6 +128,14 @@ ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf)
 
     *h = ngx_http_ws_deflate_content_handler;
 
+    /* Register status page handler in content phase */
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);
+    if (h == NULL) {
+        return NGX_ERROR;
+    }
+
+    *h = ngx_http_ws_deflate_status_handler;
+
     return NGX_OK;
 }
 
@@ -143,6 +160,86 @@ ngx_http_ws_deflate_content_handler(ngx_http_request_t *r)
 }
 
 
+static ngx_int_t
+ngx_http_ws_deflate_status_handler(ngx_http_request_t *r)
+{
+    ngx_http_ws_deflate_loc_conf_t  *conf;
+    u_char                          *buf;
+    ngx_int_t                        rc;
+    ngx_uint_t                       comp_ratio;
+
+    if (r->method != NGX_HTTP_GET && r->method != NGX_HTTP_HEAD) {
+        return NGX_HTTP_NOT_ALLOWED;
+    }
+
+    conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
+    if (conf == NULL || !conf->status_enabled) {
+        return NGX_DECLINED;
+    }
+
+    if (ngx_ws_deflate_uncompressed_bytes > 0) {
+        comp_ratio = (ngx_uint_t)(
+            (ngx_ws_deflate_uncompressed_bytes - ngx_ws_deflate_compressed_bytes)
+            * 100 / ngx_ws_deflate_uncompressed_bytes);
+    } else {
+        comp_ratio = 0;
+    }
+
+    /* Pre-allocate buffer large enough for JSON */
+    buf = ngx_pnalloc(r->pool, 512);
+    if (buf == NULL) return NGX_ERROR;
+
+    u_char *p = ngx_sprintf(buf,
+        "{\n"
+        "  \"ws_deflate\": {\n"
+        "    \"connections_total\": %i,\n"
+        "    \"connections_active\": %i,\n"
+        "    \"frames_processed\": %i,\n"
+        "    \"bytes_uncompressed\": %i,\n"
+        "    \"bytes_compressed\": %i,\n"
+        "    \"compression_ratio_pct\": %ui,\n"
+        "    \"status\": \"active\"\n"
+        "  }\n"
+        "}\n",
+        ngx_ws_deflate_total_connections,
+        ngx_ws_deflate_active_connections,
+        ngx_ws_deflate_frames_processed,
+        ngx_ws_deflate_uncompressed_bytes,
+        ngx_ws_deflate_compressed_bytes,
+        comp_ratio);
+
+    size_t len = p - buf;
+
+    r->headers_out.status = NGX_HTTP_OK;
+    r->headers_out.content_length_n = len;
+    ngx_str_set(&r->headers_out.content_type, "application/json");
+
+    rc = ngx_http_send_header(r);
+    if (rc == NGX_ERROR || rc > NGX_OK) {
+        return rc;
+    }
+
+    if (r->method == NGX_HTTP_HEAD) {
+        return NGX_OK;
+    }
+
+    {
+        ngx_buf_t   *b;
+        ngx_chain_t   out;
+
+        b = ngx_create_temp_buf(r->pool, len);
+        if (b == NULL) return NGX_ERROR;
+        ngx_memcpy(b->start, buf, len);
+        b->last = b->start + len;
+        b->last_buf = 1;
+        b->memory = 1;
+        out.buf = b;
+        out.next = NULL;
+
+        return ngx_http_output_filter(r, &out);
+    }
+}
+
 static void *
 ngx_http_ws_deflate_create_main_conf(ngx_conf_t *cf)
 {
@@ -166,6 +263,7 @@ ngx_http_ws_deflate_create_loc_conf(ngx_conf_t *cf)
     conf->context_takeover = NGX_CONF_UNSET;
     conf->chunk_size = NGX_CONF_UNSET_SIZE;
     conf->max_compress_len = NGX_CONF_UNSET_SIZE;
+    conf->status_enabled = NGX_CONF_UNSET;
 
     return conf;
 }
@@ -183,6 +281,7 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->context_takeover, prev->context_takeover, 1);
     ngx_conf_merge_size_value(conf->chunk_size, prev->chunk_size, 65536);
     ngx_conf_merge_size_value(conf->max_compress_len, prev->max_compress_len, 0);
+    ngx_conf_merge_value(conf->status_enabled, prev->status_enabled, 0);
 
     return NGX_CONF_OK;
 }

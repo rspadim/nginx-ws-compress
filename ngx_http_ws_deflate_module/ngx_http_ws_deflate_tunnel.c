@@ -9,6 +9,14 @@
 #include "ngx_http_ws_deflate_handshake.h"
 
 
+/* Global counters for status page */
+ngx_int_t  ngx_ws_deflate_total_connections;
+ngx_int_t  ngx_ws_deflate_active_connections;
+ngx_int_t  ngx_ws_deflate_compressed_bytes;
+ngx_int_t  ngx_ws_deflate_uncompressed_bytes;
+ngx_int_t  ngx_ws_deflate_frames_processed;
+
+
 /* Forward declarations */
 static void ngx_http_ws_deflate_client_read_handler(ngx_event_t *ev);
 static void ngx_http_ws_deflate_upstream_read_handler(ngx_event_t *ev);
@@ -77,6 +85,9 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
     tctx->conf = lcf;
     tctx->pool = r->pool;
     tctx->initialized = 1;
+
+    ngx_ws_deflate_total_connections++;
+    ngx_ws_deflate_active_connections++;
 
     ngx_http_set_ctx(r, tctx, ngx_http_ws_deflate_module);
 
@@ -435,6 +446,9 @@ ngx_http_ws_deflate_process_upstream_data(
             ngx_log_error(NGX_LOG_DEBUG, log, 0,
                           "ws_deflate: compressed %uz→%uz bytes",
                           frame.payload_len, comp_len);
+            ngx_ws_deflate_uncompressed_bytes += frame.payload_len;
+            ngx_ws_deflate_compressed_bytes += comp_len;
+            ngx_ws_deflate_frames_processed++;
             frame.payload = comp;
             frame.payload_len = comp_len;
             frame.rsv1 = 1;
@@ -502,6 +516,8 @@ ngx_http_ws_deflate_tunnel_close(ngx_http_request_t *r)
 
     if (tctx && tctx->initialized) {
         ngx_ws_deflate_ctx_destroy(&tctx->compress_ctx);
+
+        ngx_ws_deflate_active_connections--;
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "ws_deflate: closing tunnel");

@@ -28,11 +28,25 @@ typedef struct {
      * Eliminates per-frame pool allocations for long-lived connections. */
     u_char                      *tmp_compress;        /* [NGX_WS_DEFLATE_BUF_SIZE] */
     u_char                      *tmp_decompress;      /* [NGX_WS_DEFLATE_BUF_SIZE] */
+
+    /* Statistics counters for status page */
+    ngx_atomic_t                 comp_in_bytes;       /* bytes compressed (original) */
+    ngx_atomic_t                 comp_out_bytes;      /* bytes compressed (output) */
+    ngx_atomic_t                 decomp_in_bytes;     /* bytes decompressed (original) */
+    ngx_atomic_t                 decomp_out_bytes;    /* bytes decompressed (output) */
+    ngx_atomic_t                 total_frames;        /* total frames processed */
 } ngx_http_ws_deflate_tunnel_ctx_t;
 
 
 ngx_int_t ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r);
 void ngx_http_ws_deflate_tunnel_close(ngx_http_request_t *r);
+
+/* Global counters for status page (defined in tunnel.c) */
+extern ngx_int_t  ngx_ws_deflate_total_connections;
+extern ngx_int_t  ngx_ws_deflate_active_connections;
+extern ngx_int_t  ngx_ws_deflate_compressed_bytes;
+extern ngx_int_t  ngx_ws_deflate_uncompressed_bytes;
+extern ngx_int_t  ngx_ws_deflate_frames_processed;
 
 
 #endif /* _NGX_HTTP_WS_DEFLATE_TUNNEL_H_INCLUDED_ */
