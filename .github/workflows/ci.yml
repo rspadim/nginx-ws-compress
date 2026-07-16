@@ -114,7 +114,7 @@ jobs:
           -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 \
           -o test_compress test_compress.c \
           ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_compress.c \
-          -lz
+          -lz ${{ runner.os == 'macOS' && '-Wl,-rpath,/usr/local/lib' || '' }}
         ./test_compress
 
     - name: Setup Python venv

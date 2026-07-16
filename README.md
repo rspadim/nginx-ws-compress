@@ -461,28 +461,14 @@ ngx_http_ws_deflate_module/
 ## Platforms
 
 The module is written in portable C (no assembly) and compiles on **any
-architecture nginx supports**:
+architecture nginx supports**. CI-tested:
 
-| Architecture | Examples | CI |
+| OS | Arch | Status |
 |---|---|---|
-| **x86** (32-bit) | i386, IA-32 | — |
-| **x86_64** (64-bit) | AMD64, Intel 64 | ✅ Full |
-| **ARM** (32-bit) | armv6l, armv7l | — |
-| **ARM64** | AArch64, Apple Silicon | ✅ Build + tests |
-| **PowerPC** | ppc, ppc64, ppc64le | — |
-| **IBM S/390** | s390x | — |
-| **SPARC** | sun4u, sun4v | — |
-| **IA-64** | Itanium | — |
-
-| OS | Architectures |
-|---|---|
-| Linux | all above |
-| FreeBSD | x86, x86_64, ppc, ppc64 |
-| macOS | x86_64, ARM64 (Apple Silicon) |
-| Solaris | x86, x86_64, SPARC |
-| AIX | PowerPC |
-| HP-UX | IA-64 |
-| Windows | x86, x86_64, ARM64 |
+| Linux | amd64 | ✅ Full (build + C tests + Python + browser + load) |
+| Linux | arm64 | ✅ Build + C tests + Python |
+| macOS | amd64 | ✅ Build + C tests |
+| Windows | amd64 | 🔄 Experimental |
 
 To build on any platform:
 
@@ -490,13 +476,6 @@ To build on any platform:
 ./auto/configure --add-dynamic-module=path/to/ngx_http_ws_deflate_module
 make modules
 ```
-
----
-
-## Fork Info
-
-- **Module repo**: https://github.com/rspadim/nginx-ws-compress
-- **nginx fork**: https://github.com/rspadim/nginx (branch `feat/ws-permessage-deflate`)
 
 ---
 
