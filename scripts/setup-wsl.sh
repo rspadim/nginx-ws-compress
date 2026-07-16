@@ -9,7 +9,7 @@ sudo apt-get install -y \
   python3 python3-pip python3-venv curl wget
 
 echo "=== Installing zlib-ng ==="
-if [ ! -d /usr/local/include/zlib-ng ]; then
+if [ ! -f /usr/local/include/zlib.h ]; then
   cd /tmp
   git clone --depth 1 --branch develop https://github.com/zlib-ng/zlib-ng.git
   cd zlib-ng
