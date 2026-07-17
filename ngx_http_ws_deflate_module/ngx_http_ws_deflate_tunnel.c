@@ -436,43 +436,20 @@ ngx_http_ws_deflate_process_data(
         }
 
         if (from_upstream) {
-            /* Upstream→client: if upstream frame has RSV1=1, it was
-             * already compressed by the backend (websockets library
-             * negotiates compression regardless of our header stripping).
-             * In this case, decompress first, then re-compress with
-             * our settings.  If RSV1=0 (raw), just compress. */
+            /* Upstream→client:
+             * - RSV1=0 (raw from backend) → compress with our settings
+             * - RSV1=1 (backend already compressed) → pass through as-is */
             if (frame.rsv1
                 && (frame.opcode == NGX_WS_OPCODE_TEXT
                     || frame.opcode == NGX_WS_OPCODE_BINARY))
             {
-                /* Backend already compressed — decompress first */
-                size_t  need = frame.payload_len * 2 + 64;
-                u_char *decomp = (need <= NGX_WS_DEFLATE_BUF_SIZE)
-                                 ? tctx->tmp_decompress
-                                 : ngx_palloc(tctx->pool, need);
-                if (decomp == NULL) return NGX_ERROR;
-
-                size_t  decomp_len = need;
-                if (ngx_ws_deflate_decompress(&tctx->compress_ctx,
-                                               frame.payload, frame.payload_len,
-                                               decomp, &decomp_len) != NGX_OK)
-                {
-                    ngx_log_error(NGX_LOG_ERR, log, 0,
-                                  "ws_deflate: decompress upstream failed");
-                    return NGX_ERROR;
-                }
-
                 ngx_log_error(NGX_LOG_DEBUG, log, 0,
-                              "ws_deflate: decompressed upstream %uz→%uz bytes",
-                              frame.payload_len, decomp_len);
-                frame.payload = decomp;
-                frame.payload_len = decomp_len;
-                frame.rsv1 = 0;
-            }
+                              "ws_deflate: upstream frame already compressed "
+                              "(%uz bytes, pass through)", frame.payload_len);
+                /* Keep frame.rsv1 = 1, forward as-is */
 
-            /* Now compress (either from raw or after decompress) */
-            if (frame.opcode == NGX_WS_OPCODE_TEXT
-                || frame.opcode == NGX_WS_OPCODE_BINARY)
+            } else if (frame.opcode == NGX_WS_OPCODE_TEXT
+                       || frame.opcode == NGX_WS_OPCODE_BINARY)
             {
                 ngx_int_t  t_start = 0, t_end = 0;
 
