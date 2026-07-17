@@ -380,6 +380,11 @@ ngx_http_ws_deflate_process_data(
 
     log = src->log;
 
+    ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                  "ws_deflate: process_data from_upstream=%d client_deflate=%d len=%uz",
+                  (int) from_upstream, (int) tctx->client_deflate,
+                  buf->last - buf->pos);
+
     /* Pass-through: no compression, just forward raw bytes */
     if (!tctx->client_deflate) {
         len = buf->last - buf->pos;
@@ -466,9 +471,9 @@ ngx_http_ws_deflate_process_data(
                     }
                 }
 
-                ngx_log_error(NGX_LOG_DEBUG, log, 0,
-                              "ws_deflate: compressed %uz→%uz bytes",
-                              frame.payload_len, comp_len);
+            ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                          "ws_deflate: compressed %uz→%uz bytes (fu=%d)",
+                          frame.payload_len, comp_len, from_upstream);
                 ngx_ws_deflate_uncompressed_bytes += frame.payload_len;
                 ngx_ws_deflate_compressed_bytes += comp_len;
                 ngx_ws_deflate_frames_processed++;

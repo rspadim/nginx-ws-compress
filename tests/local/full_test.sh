@@ -15,7 +15,7 @@ echo "BUILD OK"
 
 python3 -m venv /tmp/v9
 source /tmp/v9/bin/activate
-pip install -q fastapi "uvicorn[standard]" httpx websockets --break-system-packages 2>/dev/null
+pip install -q fastapi "uvicorn[standard]" httpx --break-system-packages 2>/dev/null
 echo "VENV OK"
 
 cd /workspace/tests/python
@@ -28,10 +28,10 @@ sleep 1
 echo "SERVICES OK"
 
 echo "=== RAW WS TEST ==="
-/tmp/v9/bin/python /workspace/tests/local/test_direct.py > /tmp/direct2.txt 2>&1 || true
-cat /tmp/direct2.txt
+/tmp/v9/bin/python /workspace/tests/local/test_direct.py > /tmp/direct.txt 2>&1 || true
+cat /tmp/direct.txt
 
 echo "=== NGINX LOG (WS related) ==="
-grep -i "ws_deflate\|WebSocket\|upgrade" /tmp/nginx-ws-test/logs/error.log 2>/dev/null | tail -20
+grep -i "ws_deflate\|WebSocket\|upgrade\|compressed\|write_down\|closing" /tmp/nginx-ws-test/logs/error.log 2>/dev/null | tail -20
 
 echo "=== DONE ==="
