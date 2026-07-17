@@ -17,6 +17,8 @@ extern ngx_int_t ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r);
 
 static char *ngx_http_ws_deflate_except_slot(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
+static char *ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 
 static ngx_http_output_header_filter_pt ngx_http_next_header_filter;
 
@@ -81,9 +83,9 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
 
     { ngx_string("ws_deflate_pass"),
       NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_ws_deflate_loc_conf_t, upstream_pass),
+      ngx_http_ws_deflate_pass_slot,
+      0,
+      0,
       NULL },
 
     { ngx_string("ws_deflate_except"),
@@ -344,6 +346,27 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_size_value(conf->max_compress_len, prev->max_compress_len, 0);
     ngx_conf_merge_value(conf->status_enabled, prev->status_enabled, 0);
     ngx_conf_merge_value(conf->debug, prev->debug, 0);
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
+ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_ws_deflate_loc_conf_t *lcf = conf;
+    ngx_str_t *value;
+
+    if (cf->args->nelts < 2) {
+        return NGX_CONF_ERROR;
+    }
+
+    value = cf->args->elts;
+    lcf->upstream_pass = value[1];
+
+    ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
+                       "ws_deflate_pass set to '%V' (%uz bytes)",
+                       &lcf->upstream_pass, lcf->upstream_pass.len);
 
     return NGX_CONF_OK;
 }
