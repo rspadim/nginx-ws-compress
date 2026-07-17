@@ -78,6 +78,9 @@ ngx_int_t  ngx_ws_deflate_latency_histogram[NGX_WS_LATENCY_BUCKETS];
 
 
 /* Forward declarations */
+static void ngx_http_ws_deflate_event_handler(ngx_event_t *ev);
+static void ngx_http_ws_deflate_read_handler(ngx_http_request_t *r);
+static void ngx_http_ws_deflate_write_handler(ngx_http_request_t *r);
 static void ngx_http_ws_deflate_read_upstream(ngx_http_request_t *r,
     ngx_http_upstream_t *u);
 static void ngx_http_ws_deflate_write_upstream(ngx_http_request_t *r,
@@ -98,11 +101,15 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
     ngx_http_ws_deflate_tunnel_ctx_t  *tctx, *old_ctx;
     ngx_http_ws_deflate_loc_conf_t    *lcf;
     ngx_http_upstream_t               *u;
+    ngx_connection_t                  *c, *pc;
 
     u = r->upstream;
     if (u == NULL || u->peer.connection == NULL) {
         return NGX_ERROR;
     }
+
+    c = r->connection;
+    pc = u->peer.connection;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
 
@@ -155,13 +162,22 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
     ngx_http_set_ctx(r, tctx, ngx_http_ws_deflate_module);
 
     /*
-     * Replace upstream event handlers instead of connection handlers.
-     * Connection handlers stay as ngx_http_upstream_handler (set by proxy
-     * module), which then dispatches to u->read_event_handler /
-     * u->write_event_handler.  By replacing these function pointers we
-     * intercept the data flow without conflicting with the proxy module's
-     * event management.
+     * Replace both connection-level and upstream event handlers.
+     * Connection handlers are set to ngx_http_upstream_handler by
+     * ngx_http_upstream_upgrade; we replace them with our own
+     * universal handler that dispatches to our per-direction logic.
+     * This ensures the next event (client read, upstream read, etc.)
+     * goes through our tunnel, not the original proxy handlers.
      */
+    c->read->data = r;
+    c->read->handler = ngx_http_ws_deflate_event_handler;
+    c->write->data = r;
+    c->write->handler = ngx_http_ws_deflate_event_handler;
+    pc->read->data = r;
+    pc->read->handler = ngx_http_ws_deflate_event_handler;
+    pc->write->data = r;
+    pc->write->handler = ngx_http_ws_deflate_event_handler;
+
     u->read_event_handler = ngx_http_ws_deflate_read_upstream;
     u->write_event_handler = ngx_http_ws_deflate_write_upstream;
 
@@ -200,10 +216,60 @@ ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data, size_t len,
 }
 
 
-/* --- Upstream event handler: processes data FROM upstream, writes TO client --- */
-/* Called by ngx_http_upstream_handler for read events on BOTH connections.
- * Also called by ngx_http_run_posted_requests indirectly.
- * We read from upstream, compress, and write to client. */
+/* --- Event handlers --- */
+/* Forward declarations */
+static void ngx_http_ws_deflate_read_upstream(ngx_http_request_t *r,
+    ngx_http_upstream_t *u);
+static void ngx_http_ws_deflate_write_upstream(ngx_http_request_t *r,
+    ngx_http_upstream_t *u);
+static void ngx_http_ws_deflate_read_downstream(ngx_http_request_t *r);
+static void ngx_http_ws_deflate_write_downstream(ngx_http_request_t *r);
+
+
+/* Universal event handler: called for ALL events (client/upstream,
+ * read/write).  Dispatches to the appropriate per-direction handler.
+ * This is the connection-level handler we install after the proxy
+ * module's ngx_http_upstream_handler is in place. */
+static void
+ngx_http_ws_deflate_event_handler(ngx_event_t *ev)
+{
+    ngx_connection_t     *c;
+    ngx_http_request_t   *r;
+    ngx_http_upstream_t  *u;
+
+    c = ev->data;
+    r = c->data;
+
+    ngx_http_set_log_request(c->log, r);
+
+    if (ev->write) {
+        ngx_http_ws_deflate_write_handler(r);
+    } else {
+        ngx_http_ws_deflate_read_handler(r);
+    }
+
+    ngx_http_run_posted_requests(c);
+}
+
+
+static void
+ngx_http_ws_deflate_read_handler(ngx_http_request_t *r)
+{
+    ngx_http_upstream_t  *u = r->upstream;
+    if (u) {
+        ngx_http_ws_deflate_read_upstream(r, u);
+    }
+}
+
+
+static void
+ngx_http_ws_deflate_write_handler(ngx_http_request_t *r)
+{
+    ngx_http_upstream_t  *u = r->upstream;
+    if (u) {
+        ngx_http_ws_deflate_write_upstream(r, u);
+    }
+}
 
 static void
 ngx_http_ws_deflate_read_upstream(ngx_http_request_t *r,
