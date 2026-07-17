@@ -203,9 +203,8 @@ ngx_http_ws_deflate_write(ngx_connection_t *c, u_char *data, size_t len,
 
 
 /* --- Upstream event handler: processes data FROM upstream, writes TO client --- */
-ngx_http_ws_deflate_event_handler(ngx_event_t *ev)
-}
-
+static void
+ngx_http_ws_deflate_read_upstream(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
 {
     ngx_http_ws_deflate_tunnel_ctx_t   *tctx;
