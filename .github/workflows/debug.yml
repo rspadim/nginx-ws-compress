@@ -81,7 +81,7 @@ jobs:
         python -m uvicorn ws_backend:app --host 127.0.0.1 --port 9001 &
         sleep 2
         mkdir -p /tmp/nginx-ws-test/logs
-        /usr/local/nginx/sbin/nginx -c ${{ github.workspace }}/nginx-ws-compress/tests/python/nginx.conf -p /tmp/nginx-ws-test
+        /usr/local/nginx/sbin/nginx -c ${{ github.workspace }}/nginx-ws-compress/tests/python/nginx-direct.conf -p /tmp/nginx-ws-test
         sleep 1
         
         echo "=== PYTEST ==="
