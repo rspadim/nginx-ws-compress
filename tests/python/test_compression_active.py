@@ -27,6 +27,12 @@ def test_compression_smoke(nginx_server):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
+        # Capture console errors
+        errors = []
+        page.on("console", lambda msg: errors.append(
+            f"[{msg.type}] {msg.text}"))
+        page.on("pageerror", lambda err: errors.append(
+            f"[PAGE ERROR] {err}"))
         result = page.evaluate("""
             async () => {
                 const ws = new WebSocket('ws://127.0.0.1:8090/ws');
@@ -39,4 +45,8 @@ def test_compression_smoke(nginx_server):
             }
         """)
         assert result == "compression-smoke", f"Got: {result}"
+        if errors:
+            print("  Console errors:")
+            for e in errors:
+                print(f"    {e}")
         browser.close()

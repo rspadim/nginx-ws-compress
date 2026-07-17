@@ -106,6 +106,18 @@ def nginx_server(backend_server):
     _start_nginx("nginx.conf", port=8090)
     yield
     _print_status_metrics(8090)
+    # Dump nginx error log on failure
+    log_path = "/tmp/nginx-ws-test/logs/error.log"
+    try:
+        import pathlib
+        log = pathlib.Path(log_path)
+        if log.exists() and log.stat().st_size > 0:
+            print(f"\n  === Nginx error log ({log.stat().st_size} bytes) ===")
+            with open(log_path) as f:
+                for line in f.readlines()[-50:]:
+                    print(f"    {line.rstrip()}")
+    except Exception as e:
+        print(f"  (could not read error log: {e})")
     _stop_nginx()
 
 
