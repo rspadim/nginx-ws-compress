@@ -48,7 +48,7 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     u_char *p = conf->upstream_pass.data;
     size_t  len = conf->upstream_pass.len;
 
-    if (len < 7 || ngx_strncasecmp(p, "http://", 7) != 0) {
+    if (len < 7 || ngx_strncasecmp(p, (u_char *) "http://", 7) != 0) {
         return NGX_DECLINED;
     }
     p += 7; len -= 7;
@@ -89,7 +89,7 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
             i = 0;
         }
         if (h[i].key.len == 17
-            && ngx_strncasecmp(h[i].key.data, "sec-websocket-key", 17) == 0)
+            && ngx_strncasecmp(h[i].key.data, (u_char *) "sec-websocket-key", 17) == 0)
         {
             ws_key = h[i].value;
             break;
@@ -135,8 +135,8 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     }
 
     /* Build upgrade request WITHOUT Sec-WebSocket-Extensions */
-    u_char *req_data = ctx->buf->start;
-    size_t req_len = ngx_snprintf(req_data, 4096,
+    u_char  req_buf[4096];
+    u_char *req_end = ngx_snprintf(req_buf, sizeof(req_buf),
         "GET %V HTTP/1.1\r\n"
         "Host: %V:%d\r\n"
         "Upgrade: websocket\r\n"
@@ -146,6 +146,8 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
         "\r\n",
         &path, &host, port, &ws_key);
 
+    size_t req_len = req_end - req_buf;
+    ngx_memcpy(ctx->buf->start, req_buf, req_len);
     ctx->buf->last = ctx->buf->start + req_len;
 
     /* Register write event */
@@ -207,7 +209,7 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
     if (!end) { ngx_handle_read_event(pc->read, 0); return; }
 
     /* Check for 101 */
-    if (!strstr((const char *)(const char *) ctx->buf->start, "101")) {
+    if (!strstr((const char *) ctx->buf->start, "101")) {
         ngx_close_connection(pc); ctx->backend = NULL; return;
     }
 
@@ -240,8 +242,8 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
 
     /* Build our response with extensions */
     ngx_connection_t *c = r->connection;
-    u_char resp[1024];
-    size_t rlen = ngx_snprintf(resp, sizeof(resp),
+    u_char  resp[1024];
+    u_char *resp_end = ngx_snprintf(resp, sizeof(resp),
         "HTTP/1.1 101 Switching Protocols\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
@@ -249,6 +251,8 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
         "Sec-WebSocket-Extensions: permessage-deflate\r\n"
         "X-WS-Deflate: active\r\n"
         "\r\n", accept_len, accept_val);
+
+    size_t rlen = resp_end - resp;
 
     ngx_buf_t *b = ngx_create_temp_buf(r->pool, rlen);
     if (!b) return;
