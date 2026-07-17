@@ -288,6 +288,7 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
     }
 
     /* Start raw tunnel */
+    ngx_connection_t *c = r->connection;
     ctx->state = 2;
     c->read->handler = ngx_ws_upstream_tunnel_read;
     c->read->data = r;
