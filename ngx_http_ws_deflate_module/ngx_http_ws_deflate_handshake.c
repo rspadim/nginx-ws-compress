@@ -6,11 +6,7 @@
 #include "ngx_http_ws_deflate_tunnel.h"
 
 
-/* Deferred tunnel install: ngx_http_upstream_upgrade overwrites our
- * handlers (runs AFTER the header filter).  We post an event to install
- * the tunnel after the upgrade setup completes. */
-static void ngx_http_ws_deflate_post_install(ngx_http_request_t *r);
-static void ngx_http_ws_deflate_deferred_install(ngx_event_t *ev);
+ngx_int_t
 
 
 ngx_int_t
@@ -136,64 +132,17 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     ngx_ws_deflate_total_connections++;
 
     if (ctx != NULL && ctx->client_deflate) {
-        /* Add Sec-WebSocket-Extensions to response so client knows
-         * permessage-deflate was accepted */
-        h = ngx_list_push(&r->headers_out.headers);
-        if (h == NULL) return NGX_ERROR;
-        h->hash = 1;
-        ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
-        ngx_str_set(&h->value, "permessage-deflate");
-
-        /* Add diagnostic header */
         h = ngx_list_push(&r->headers_out.headers);
         if (h == NULL) {
             return NGX_ERROR;
         }
         h->hash = 1;
         ngx_str_set(&h->key, "X-WS-Deflate");
-        ngx_str_set(&h->value, "active");
+        ngx_str_set(&h->value, "detected");
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: negotiated permessage-deflate with client");
-
-        /* Deferred tunnel install */
-        ngx_http_ws_deflate_post_install(r);
+                      "ws_deflate: client requested permessage-deflate");
     }
 
     return NGX_OK;
-}
-
-
-static void
-ngx_http_ws_deflate_post_install(ngx_http_request_t *r)
-{
-    ngx_event_t  *ev;
-
-    ev = ngx_pcalloc(r->pool, sizeof(ngx_event_t));
-    if (ev == NULL) {
-        return;
-    }
-
-    ev->handler = ngx_http_ws_deflate_deferred_install;
-    ev->data = r;
-    ev->log = r->connection->log;
-
-    ngx_post_event(ev, &ngx_posted_events);
-}
-
-
-static void
-ngx_http_ws_deflate_deferred_install(ngx_event_t *ev)
-{
-    ngx_http_request_t  *r;
-
-    r = ev->data;
-
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: deferred tunnel install");
-
-    if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "ws_deflate: deferred tunnel install failed");
-    }
 }
