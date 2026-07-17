@@ -98,15 +98,11 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
     ngx_http_ws_deflate_tunnel_ctx_t  *tctx, *old_ctx;
     ngx_http_ws_deflate_loc_conf_t    *lcf;
     ngx_http_upstream_t               *u;
-    ngx_connection_t                  *c, *pc;
 
     u = r->upstream;
     if (u == NULL || u->peer.connection == NULL) {
         return NGX_ERROR;
     }
-
-    c = r->connection;
-    pc = u->peer.connection;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
 
