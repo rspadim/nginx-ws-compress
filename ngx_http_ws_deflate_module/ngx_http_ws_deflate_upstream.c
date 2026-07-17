@@ -35,7 +35,17 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
                   "ws_deflate: UPSTREAM HANDLER CALLED");
 
     conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
-    if (conf == NULL || conf->upstream_pass.len == 0) {
+    if (conf == NULL) {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: conf is NULL");
+        return NGX_DECLINED;
+    }
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: upstream_pass='%V' len=%uz",
+                  &conf->upstream_pass, conf->upstream_pass.len);
+
+    if (conf->upstream_pass.len == 0) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "ws_deflate: no upstream_pass, declining");
         return NGX_DECLINED;
