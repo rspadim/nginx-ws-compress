@@ -158,3 +158,20 @@ ngx_ws_frame_apply_mask(u_char *payload, size_t len, uint32_t masking_key)
         payload[i] ^= key[i % 4];
     }
 }
+
+
+void
+ngx_ws_frame_generate_mask(uint32_t *key)
+{
+    /* Use nginx's PRNG if available, otherwise a simple mix.
+     * We combine time and address to avoid predictable masks. */
+#if (NGX_HAVE_RAND)
+    *key = (uint32_t) rand();
+    *key ^= (uint32_t) rand() << 16;
+#else
+    ngx_int_t  now = (ngx_int_t) ngx_time();
+    *key = (uint32_t) (now ^ (ngx_int_t) key);
+    *key ^= (uint32_t) (now >> 16);
+    *key ^= 0xDEADBEEF;
+#endif
+}

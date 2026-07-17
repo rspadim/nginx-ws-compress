@@ -510,7 +510,14 @@ ngx_http_ws_deflate_process_data(
 
         /* Close frame → forward and signal shutdown */
         if (frame.opcode == NGX_WS_OPCODE_CLOSE) {
-            frame.masked = 0;
+            if (!from_upstream) {
+                ngx_ws_frame_generate_mask(&frame.masking_key);
+                frame.masked = 1;
+                ngx_ws_frame_apply_mask(frame.payload, frame.payload_len,
+                                        frame.masking_key);
+            } else {
+                frame.masked = 0;
+            }
             out_len = frame.header_len + frame.payload_len + 14;
             out_buf = ngx_palloc(tctx->pool, out_len);
             if (out_buf == NULL) return NGX_ERROR;
@@ -524,7 +531,17 @@ ngx_http_ws_deflate_process_data(
         }
 
         /* Forward data/continuation frames */
-        frame.masked = 0;
+        if (!from_upstream) {
+            /* Client→upstream frames MUST be masked per RFC 6455.
+             * The mask was stripped during unmask+processing;
+             * generate a new mask and apply it to the payload. */
+            ngx_ws_frame_generate_mask(&frame.masking_key);
+            frame.masked = 1;
+            ngx_ws_frame_apply_mask(frame.payload, frame.payload_len,
+                                    frame.masking_key);
+        } else {
+            frame.masked = 0;
+        }
         out_len = frame.header_len + frame.payload_len + 14;
         out_buf = tctx->tmp_compress;
         if (out_len > NGX_WS_DEFLATE_BUF_SIZE) {

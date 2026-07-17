@@ -1,0 +1,15 @@
+.git/
+.gitignore
+.gitattributes
+*.md
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+.idea/
+*.so
+*.o
+*.obj
+.DS_Store

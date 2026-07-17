@@ -33,5 +33,6 @@ typedef struct {
 ngx_int_t ngx_ws_frame_parse(u_char *data, size_t len, ngx_ws_frame_t *frame);
 ngx_int_t ngx_ws_frame_serialize(ngx_ws_frame_t *frame, u_char *buf, size_t *len);
 void ngx_ws_frame_apply_mask(u_char *payload, size_t len, uint32_t masking_key);
+void ngx_ws_frame_generate_mask(uint32_t *key);
 
 #endif /* _NGX_HTTP_WS_DEFLATE_FRAME_H_INCLUDED_ */

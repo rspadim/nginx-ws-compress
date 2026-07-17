@@ -1,0 +1,52 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NGINX_VERSION=release-1.31.3
+
+# Install system deps + Python + Playwright
+RUN apt-get update && apt-get install -y \
+    build-essential git libpcre3-dev libssl-dev \
+    autoconf automake libtool pkg-config \
+    python3 python3-pip python3-venv \
+    curl wget sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install zlib-ng
+RUN git clone --depth 1 --branch develop https://github.com/zlib-ng/zlib-ng.git /tmp/zlib-ng \
+    && cd /tmp/zlib-ng \
+    && ./configure --prefix=/usr/local --zlib-compat \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig \
+    && rm -rf /tmp/zlib-ng
+
+WORKDIR /workspace
+
+# Copy module source
+COPY . /workspace/nginx-ws-compress/
+
+# Clone nginx and build module
+RUN git clone https://github.com/nginx/nginx.git /workspace/nginx-src \
+    && cd /workspace/nginx-src \
+    && git checkout $NGINX_VERSION \
+    && ./auto/configure \
+        --with-compat \
+        --with-debug \
+        --with-cc-opt="-I/usr/local/include" \
+        --with-ld-opt="-L/usr/local/lib" \
+        --add-dynamic-module=/workspace/nginx-ws-compress/ngx_http_ws_deflate_module \
+    && make modules -j$(nproc) \
+    && make install \
+    && ls -la /usr/local/nginx/modules/ngx_http_ws_deflate_module.so
+
+# Install Python test deps
+RUN cd /workspace/nginx-ws-compress/tests/python \
+    && python3 -m venv venv \
+    && . venv/bin/activate \
+    && pip install --upgrade pip \
+    && pip install -r requirements.txt \
+    && playwright install chromium 2>/dev/null || true \
+    && playwright install-deps chromium 2>/dev/null || true
+
+# Test entrypoint
+CMD ["bash", "-c", "cd /workspace/nginx-ws-compress && source tests/python/venv/bin/activate && python -m pytest tests/python/test_compression_active.py -v -s 2>&1"]

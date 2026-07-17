@@ -6,6 +6,13 @@
 #include "ngx_http_ws_deflate_tunnel.h"
 
 
+/* Deferred tunnel install: ngx_http_upstream_upgrade overwrites our
+ * handlers (runs AFTER the header filter).  We post an event to install
+ * the tunnel after the upgrade setup completes. */
+static void ngx_http_ws_deflate_post_install(ngx_http_request_t *r);
+static void ngx_http_ws_deflate_deferred_install(ngx_event_t *ev);
+
+
 ngx_int_t
 ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
 {
@@ -152,15 +159,47 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
                       "ws_deflate: negotiated permessage-deflate with client");
     }
 
-    /* Install compression tunnel by replacing upstream event handlers.
-     * u->read_event_handler handles upstream→client data (compress).
-     * r->write_event_handler handles client→upstream data (decompress). */
+    /* Schedule deferred tunnel install — ngx_http_upstream_upgrade runs
+     * AFTER our header filter and overwrites event handlers.  By posting
+     * the install, we run AFTER the upgrade setup completes. */
     if (ctx != NULL && ctx->client_deflate) {
-        if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "ws_deflate: tunnel install failed");
-        }
+        ngx_http_ws_deflate_post_install(r);
     }
 
     return NGX_OK;
+}
+
+
+static void
+ngx_http_ws_deflate_post_install(ngx_http_request_t *r)
+{
+    ngx_event_t  *ev;
+
+    ev = ngx_pcalloc(r->pool, sizeof(ngx_event_t));
+    if (ev == NULL) {
+        return;
+    }
+
+    ev->handler = ngx_http_ws_deflate_deferred_install;
+    ev->data = r;
+    ev->log = r->connection->log;
+
+    ngx_post_event(ev, &ngx_posted_events);
+}
+
+
+static void
+ngx_http_ws_deflate_deferred_install(ngx_event_t *ev)
+{
+    ngx_http_request_t  *r;
+
+    r = ev->data;
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: deferred tunnel install");
+
+    if (ngx_http_ws_deflate_tunnel_install(r) != NGX_OK) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "ws_deflate: deferred tunnel install failed");
+    }
 }
