@@ -14,6 +14,7 @@ typedef struct {
     size_t        chunk_size;
     size_t        max_compress_len;
     ngx_flag_t    status_enabled;
+    ngx_flag_t    debug;
 } ngx_http_ws_deflate_loc_conf_t;
 
 

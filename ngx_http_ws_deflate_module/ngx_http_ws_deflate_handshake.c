@@ -7,9 +7,6 @@
 
 
 ngx_int_t
-
-
-ngx_int_t
 ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
 {
     ngx_http_ws_deflate_loc_conf_t        *conf;

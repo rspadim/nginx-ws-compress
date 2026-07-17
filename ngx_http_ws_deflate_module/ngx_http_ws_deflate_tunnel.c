@@ -47,6 +47,21 @@ static ngx_int_t ngx_ws_gettime_us(void) {
 #include "ngx_http_ws_deflate_handshake.h"
 
 
+/* Debug helper: hex dump up to 48 bytes into a static buffer. */
+#define NGX_WS_HEX_BUF_SIZE  128
+static u_char *ngx_ws_hex(const u_char *data, size_t len) {
+    static u_char  buf[NGX_WS_HEX_BUF_SIZE];
+    u_char        *p = buf;
+    size_t         i, n = (len < 48) ? len : 48;
+    for (i = 0; i < n; i++) {
+        p = ngx_sprintf(p, "%02xd", data[i]);
+    }
+    if (len > 48) { p = ngx_sprintf(p, "..."); }
+    *p = '\0';
+    return buf;
+}
+
+
 /* Global counters for status page */
 ngx_int_t  ngx_ws_deflate_total_connections;
 ngx_int_t  ngx_ws_deflate_active_connections;
@@ -404,17 +419,12 @@ ngx_http_ws_deflate_process_data(
     data = buf->pos;
     len = buf->last - buf->pos;
 
-    /* Dump raw upstream frame bytes for debugging */
-    if (from_upstream && len > 0) {
-        u_char  hex[128];
-        ngx_int_t  j;
-        for (j = 0; j < (ngx_int_t) len && j < 32; j++) {
-            ngx_sprintf(hex + j * 2, "%02xd", data[j]);
-        }
-        hex[ngx_min((ngx_int_t) len, 32) * 2] = '\0';
-        ngx_log_error(NGX_LOG_DEBUG, log, 0,
-                      "ws_deflate: upstream buf (%uz bytes): %s",
-                      len, hex);
+    /* Debug: hex dump frame data when ws_deflate_debug is on */
+    if (tctx->conf->debug && len > 0) {
+        ngx_log_error(NGX_LOG_NOTICE, log, 0,
+                      "ws_deflate: %s buf (%uz bytes): %s",
+                      from_upstream ? "upstream" : "client",
+                      len, ngx_ws_hex(data, len));
     }
 
     while (len > 0) {
