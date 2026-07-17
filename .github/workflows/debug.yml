@@ -49,6 +49,7 @@ jobs:
         cd nginx-ws-compress/tests/c
         gcc -Wall -Wextra -g -I../../ngx_http_ws_deflate_module \
           -I${{ github.workspace }}/nginx-src/src/core \
+          -I${{ github.workspace }}/nginx-src/src/os/unix \
           -I${{ github.workspace }}/nginx-src/objs \
           -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 \
           -o test_frame test_frame.c \
@@ -56,6 +57,7 @@ jobs:
         ./test_frame
         gcc -Wall -Wextra -g -I../../ngx_http_ws_deflate_module \
           -I${{ github.workspace }}/nginx-src/src/core \
+          -I${{ github.workspace }}/nginx-src/src/os/unix \
           -I${{ github.workspace }}/nginx-src/objs \
           -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 \
           -o test_compress test_compress.c \
