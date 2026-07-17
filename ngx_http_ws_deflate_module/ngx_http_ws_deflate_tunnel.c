@@ -404,6 +404,19 @@ ngx_http_ws_deflate_process_data(
     data = buf->pos;
     len = buf->last - buf->pos;
 
+    /* Dump raw upstream frame bytes for debugging */
+    if (from_upstream && len > 0) {
+        u_char  hex[128];
+        ngx_int_t  j;
+        for (j = 0; j < (ngx_int_t) len && j < 32; j++) {
+            ngx_sprintf(hex + j * 2, "%02xd", data[j]);
+        }
+        hex[ngx_min((ngx_int_t) len, 32) * 2] = '\0';
+        ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                      "ws_deflate: upstream buf (%uz bytes): %s",
+                      len, hex);
+    }
+
     while (len > 0) {
         rc = ngx_ws_frame_parse(data, len, &frame);
         if (rc == NGX_AGAIN) break;
@@ -423,9 +436,43 @@ ngx_http_ws_deflate_process_data(
         }
 
         if (from_upstream) {
-            /* Upstream→client: compress data frames */
-            if ((frame.opcode == NGX_WS_OPCODE_TEXT
-                 || frame.opcode == NGX_WS_OPCODE_BINARY))
+            /* Upstream→client: if upstream frame has RSV1=1, it was
+             * already compressed by the backend (websockets library
+             * negotiates compression regardless of our header stripping).
+             * In this case, decompress first, then re-compress with
+             * our settings.  If RSV1=0 (raw), just compress. */
+            if (frame.rsv1
+                && (frame.opcode == NGX_WS_OPCODE_TEXT
+                    || frame.opcode == NGX_WS_OPCODE_BINARY))
+            {
+                /* Backend already compressed — decompress first */
+                size_t  need = frame.payload_len * 2 + 64;
+                u_char *decomp = (need <= NGX_WS_DEFLATE_BUF_SIZE)
+                                 ? tctx->tmp_decompress
+                                 : ngx_palloc(tctx->pool, need);
+                if (decomp == NULL) return NGX_ERROR;
+
+                size_t  decomp_len = need;
+                if (ngx_ws_deflate_decompress(&tctx->compress_ctx,
+                                               frame.payload, frame.payload_len,
+                                               decomp, &decomp_len) != NGX_OK)
+                {
+                    ngx_log_error(NGX_LOG_ERR, log, 0,
+                                  "ws_deflate: decompress upstream failed");
+                    return NGX_ERROR;
+                }
+
+                ngx_log_error(NGX_LOG_DEBUG, log, 0,
+                              "ws_deflate: decompressed upstream %uz→%uz bytes",
+                              frame.payload_len, decomp_len);
+                frame.payload = decomp;
+                frame.payload_len = decomp_len;
+                frame.rsv1 = 0;
+            }
+
+            /* Now compress (either from raw or after decompress) */
+            if (frame.opcode == NGX_WS_OPCODE_TEXT
+                || frame.opcode == NGX_WS_OPCODE_BINARY)
             {
                 ngx_int_t  t_start = 0, t_end = 0;
 

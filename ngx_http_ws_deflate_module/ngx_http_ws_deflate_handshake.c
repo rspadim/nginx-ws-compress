@@ -102,8 +102,15 @@ ngx_http_ws_deflate_request_handler(ngx_http_request_t *r)
 
     if (ext != NULL) {
         ctx->client_deflate = 1;
-        /* Remove extensions header so backend doesn't see it */
+
+        ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
+                      "ws_deflate: removing Sec-WebSocket-Extensions "
+                      "(hash=%ui, key=\"%V\")", ext->hash, &ext->key);
+
+        /* Remove extensions header so backend doesn't see it.
+         * Set hash=0 so proxy module skips it during header copy. */
         ext->hash = 0;
+        ext->key.len = 0;
     }
 
     return NGX_DECLINED;
