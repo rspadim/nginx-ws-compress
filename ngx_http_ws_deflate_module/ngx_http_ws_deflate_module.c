@@ -143,8 +143,8 @@ ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf)
 
     *h = ngx_http_ws_deflate_content_handler;
 
-    /* Upstream handler (in content phase, for ws_deflate_pass) */
-    h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);
+    /* Upstream handler (also precontent, before proxy module) */
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_PRECONTENT_PHASE].handlers);
     if (h == NULL) {
         return NGX_ERROR;
     }
