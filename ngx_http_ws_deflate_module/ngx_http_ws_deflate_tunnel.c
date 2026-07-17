@@ -267,9 +267,10 @@ ngx_http_ws_deflate_write_upstream(ngx_http_request_t *r,
         return;
     }
 
-    if (ngx_handle_write_event(u->peer.connection->write, 0) != NGX_OK) {
-        ngx_http_ws_deflate_tunnel_close(r);
-    }
+    /* Write events on the upstream connection mean the upstream
+     * write buffer is ready.  Read upstream data (if any) and
+     * forward to client — same as read_upstream. */
+    ngx_http_ws_deflate_read_upstream(r, u);
 }
 
 
