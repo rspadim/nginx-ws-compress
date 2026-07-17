@@ -235,7 +235,6 @@ ngx_http_ws_deflate_event_handler(ngx_event_t *ev)
 {
     ngx_connection_t     *c;
     ngx_http_request_t   *r;
-    ngx_http_upstream_t  *u;
 
     c = ev->data;
     r = c->data;
