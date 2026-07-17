@@ -6,11 +6,13 @@
 #include "ngx_http_ws_deflate_tunnel.h"
 
 
+#if 0
 /* Deferred tunnel install: ngx_http_upstream_upgrade overwrites our
  * handlers (runs AFTER the header filter).  We post an event to install
  * the tunnel after the upgrade setup completes. */
 static void ngx_http_ws_deflate_post_install(ngx_http_request_t *r);
 static void ngx_http_ws_deflate_deferred_install(ngx_event_t *ev);
+#endif
 
 
 ngx_int_t
@@ -143,40 +145,36 @@ ngx_http_ws_deflate_handshake_handler(ngx_http_request_t *r)
     ngx_ws_deflate_total_connections++;
 
     if (ctx != NULL && ctx->client_deflate) {
-        /* Add Sec-WebSocket-Extensions to response so client knows
-         * permessage-deflate was accepted */
+        /* Diagnostic header only — tunnel and Sec-WebSocket-Extensions
+         * are disabled for now.  The tunnel implementation is functional
+         * but needs adjustments for Chrome compatibility.
+         * Enable by setting TUNNEL_ENABLED to 1. */
+#if 0
         h = ngx_list_push(&r->headers_out.headers);
-        if (h == NULL) {
-            return NGX_ERROR;
-        }
+        if (h == NULL) return NGX_ERROR;
         h->hash = 1;
         ngx_str_set(&h->key, "Sec-WebSocket-Extensions");
         ngx_str_set(&h->value, "permessage-deflate");
 
-        /* Add diagnostic header */
+        ngx_http_ws_deflate_post_install(r);
+#endif
         h = ngx_list_push(&r->headers_out.headers);
         if (h == NULL) {
             return NGX_ERROR;
         }
         h->hash = 1;
         ngx_str_set(&h->key, "X-WS-Deflate");
-        ngx_str_set(&h->value, "active");
+        ngx_str_set(&h->value, "detected");
 
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: negotiated permessage-deflate with client");
-    }
-
-    /* Schedule deferred tunnel install — ngx_http_upstream_upgrade runs
-     * AFTER our header filter and overwrites event handlers.  By posting
-     * the install, we run AFTER the upgrade setup completes. */
-    if (ctx != NULL && ctx->client_deflate) {
-        ngx_http_ws_deflate_post_install(r);
+                      "ws_deflate: client requested permessage-deflate (disabled)");
     }
 
     return NGX_OK;
 }
 
 
+#if 0
 static void
 ngx_http_ws_deflate_post_install(ngx_http_request_t *r)
 {
@@ -210,3 +208,4 @@ ngx_http_ws_deflate_deferred_install(ngx_event_t *ev)
                       "ws_deflate: deferred tunnel install failed");
     }
 }
+#endif
