@@ -169,13 +169,9 @@ ngx_http_ws_deflate_tunnel_install(ngx_http_request_t *r)
      * This ensures the next event (client read, upstream read, etc.)
      * goes through our tunnel, not the original proxy handlers.
      */
-    c->read->data = r;
     c->read->handler = ngx_http_ws_deflate_event_handler;
-    c->write->data = r;
     c->write->handler = ngx_http_ws_deflate_event_handler;
-    pc->read->data = r;
     pc->read->handler = ngx_http_ws_deflate_event_handler;
-    pc->write->data = r;
     pc->write->handler = ngx_http_ws_deflate_event_handler;
 
     u->read_event_handler = ngx_http_ws_deflate_read_upstream;
