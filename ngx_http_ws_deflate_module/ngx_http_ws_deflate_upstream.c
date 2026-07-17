@@ -23,6 +23,7 @@ static void ngx_ws_upstream_send_request(ngx_event_t *ev);
 static void ngx_ws_upstream_read_response(ngx_event_t *ev);
 static void ngx_ws_upstream_tunnel_read(ngx_event_t *ev);
 static void ngx_ws_upstream_tunnel_write(ngx_event_t *ev);
+static void ngx_ws_upstream_req_handler(ngx_http_request_t *r);
 
 
 ngx_int_t
@@ -150,11 +151,26 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     ngx_memcpy(ctx->buf->start, req_buf, req_len);
     ctx->buf->last = ctx->buf->start + req_len;
 
-    /* Register write event */
+    /* Register write event and keep request alive */
     ngx_handle_write_event(pc->write, 0);
-    r->write_event_handler = ngx_http_request_empty_handler;
+    r->write_event_handler = ngx_ws_upstream_req_handler;
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: waiting for backend connection");
 
     return NGX_DONE;
+}
+
+
+static void
+ngx_ws_upstream_req_handler(ngx_http_request_t *r)
+{
+    ngx_http_ws_deflate_upstream_ctx_t *ctx;
+    ctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
+    if (!ctx || !ctx->backend) return;
+
+    if (ctx->backend->write->ready) {
+        ngx_ws_upstream_send_request(ctx->backend->write);
+    }
 }
 
 
