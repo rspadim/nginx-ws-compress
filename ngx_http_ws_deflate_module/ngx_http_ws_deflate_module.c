@@ -13,6 +13,7 @@ static char *ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, vo
 static ngx_int_t ngx_http_ws_deflate_header_filter(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ws_deflate_content_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ws_deflate_status_handler(ngx_http_request_t *r);
+extern ngx_int_t ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r);
 
 static char *ngx_http_ws_deflate_except_slot(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
@@ -78,6 +79,13 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       offsetof(ngx_http_ws_deflate_loc_conf_t, debug),
       NULL },
 
+    { ngx_string("ws_deflate_pass"),
+      NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+      ngx_conf_set_str_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_ws_deflate_loc_conf_t, upstream_pass),
+      NULL },
+
     { ngx_string("ws_deflate_except"),
       NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE12,
       ngx_http_ws_deflate_except_slot,
@@ -134,6 +142,14 @@ ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf)
     }
 
     *h = ngx_http_ws_deflate_content_handler;
+
+    /* Upstream handler (in content phase, for ws_deflate_pass) */
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);
+    if (h == NULL) {
+        return NGX_ERROR;
+    }
+
+    *h = ngx_http_ws_deflate_upstream_handler;
 
     /* Register status page handler in content phase */
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);

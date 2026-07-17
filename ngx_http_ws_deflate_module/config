@@ -4,7 +4,8 @@ ngx_module_srcs="$ngx_addon_dir/ngx_http_ws_deflate_module.c \
     $ngx_addon_dir/ngx_http_ws_deflate_handshake.c \
     $ngx_addon_dir/ngx_http_ws_deflate_frame.c \
     $ngx_addon_dir/ngx_http_ws_deflate_compress.c \
-    $ngx_addon_dir/ngx_http_ws_deflate_tunnel.c"
+    $ngx_addon_dir/ngx_http_ws_deflate_tunnel.c \
+    $ngx_addon_dir/ngx_http_ws_deflate_upstream.c"
 ngx_module_libs="-lz"
 
 if [ "$ngx_module_link" = DYNAMIC ]; then

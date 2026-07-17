@@ -15,6 +15,7 @@ typedef struct {
     size_t        max_compress_len;
     ngx_flag_t    status_enabled;
     ngx_flag_t    debug;
+    ngx_str_t     upstream_pass;  /* ws_deflate_pass URL */
 } ngx_http_ws_deflate_loc_conf_t;
 
 
