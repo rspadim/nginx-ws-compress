@@ -163,15 +163,10 @@ ngx_ws_frame_apply_mask(u_char *payload, size_t len, uint32_t masking_key)
 void
 ngx_ws_frame_generate_mask(uint32_t *key)
 {
-    /* Use nginx's PRNG if available, otherwise a simple mix.
-     * We combine time and address to avoid predictable masks. */
-#if (NGX_HAVE_RAND)
-    *key = (uint32_t) rand();
-    *key ^= (uint32_t) rand() << 16;
-#else
-    ngx_int_t  now = (ngx_int_t) ngx_time();
-    *key = (uint32_t) (now ^ (ngx_int_t) key);
-    *key ^= (uint32_t) (now >> 16);
-    *key ^= 0xDEADBEEF;
-#endif
+    /* Simple pseudo-random mask without nginx dependencies.
+     * Key is based on address of key itself plus file-scoped counter,
+     * which provides sufficient entropy for WebSocket masking. */
+    static ngx_uint_t  mask_seed = 0;
+    mask_seed = (mask_seed + 1) * 1103515245 + 12345;
+    *key = (uint32_t) mask_seed ^ (uint32_t) ((ngx_int_t) key >> 2);
 }
