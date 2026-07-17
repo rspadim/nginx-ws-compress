@@ -48,27 +48,27 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     u_char *p = conf->upstream_pass.data;
     size_t  len = conf->upstream_pass.len;
 
-    if (len < 7 || ngx_strncasecmp(p, (u_char *) "http://", 7) != 0) {
+    if (len < 7 || ngx_strncasecmp(p, "http://", 7) != 0) {
         return NGX_DECLINED;
     }
     p += 7; len -= 7;
 
     ngx_str_t host, path;
     ngx_int_t port;
-    u_char *colon = ngx_strchr(p, ':');
-    u_char *slash = ngx_strchr(p, '/');
+    u_char *colon = (u_char *) ngx_strchr(p, ':');
+    u_char *slash = (u_char *) ngx_strchr(p, '/');
 
     if (colon && (!slash || colon < slash)) {
         host.data = p; host.len = colon - p; p = colon + 1;
         if (slash) { port = ngx_atoi(p, slash - p);
                      path.data = slash;
-                     path.len = conf->upstream_pass.data + conf->upstream_pass.len - slash; }
+                     path.len = (size_t)(conf->upstream_pass.data + conf->upstream_pass.len - slash); }
         else { port = ngx_atoi(p, len);
                path.data = (u_char *) "/"; path.len = 1; }
     } else if (slash) {
         host.data = p; host.len = slash - p; port = 80;
         path.data = slash;
-        path.len = conf->upstream_pass.data + conf->upstream_pass.len - slash;
+        path.len = (size_t)(conf->upstream_pass.data + conf->upstream_pass.len - slash);
     } else {
         host.data = p; host.len = len; port = 80;
         path.data = (u_char *) "/"; path.len = 1;
@@ -89,7 +89,7 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
             i = 0;
         }
         if (h[i].key.len == 17
-            && ngx_strncasecmp(h[i].key.data, (u_char *) "sec-websocket-key", 17) == 0)
+            && ngx_strncasecmp(h[i].key.data, "sec-websocket-key", 17) == 0)
         {
             ws_key = h[i].value;
             break;
@@ -203,11 +203,11 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
     ctx->buf->last += n;
 
     /* Check for complete headers */
-    u_char *end = (u_char *) ngx_strstr(ctx->buf->start, (u_char *) "\r\n\r\n");
+    u_char *end = (u_char *) strstr((const char *)ctx->buf->start, "\r\n\r\n");
     if (!end) { ngx_handle_read_event(pc->read, 0); return; }
 
     /* Check for 101 */
-    if (!ngx_strstr(ctx->buf->start, (u_char *) "101")) {
+    if (!strstr((const char *)(const char *) ctx->buf->start, "101")) {
         ngx_close_connection(pc); ctx->backend = NULL; return;
     }
 
@@ -219,14 +219,14 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
      * Sec-WebSocket-Accept from the backend (so the key matches). */
 
     /* Find the accept key from backend response */
-    u_char *accept = (u_char *) ngx_strstr(ctx->buf->start, (u_char *) "Sec-WebSocket-Accept:");
+    u_char *accept = (u_char *) strstr((const char *)ctx->buf->start, "Sec-WebSocket-Accept:");
     u_char *accept_val = NULL;
     size_t  accept_len = 0;
 
     if (accept) {
         accept += 21;  /* skip "Sec-WebSocket-Accept: " */
         while (*accept == ' ') accept++;
-        u_char *nl = (u_char *) ngx_strstr(accept, (u_char *) "\r\n");
+        u_char *nl = (u_char *) strstr((const char *)accept, "\r\n");
         if (nl) {
             accept_val = accept;
             accept_len = nl - accept;
