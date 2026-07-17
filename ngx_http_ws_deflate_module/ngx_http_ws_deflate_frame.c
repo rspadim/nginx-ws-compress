@@ -158,15 +158,3 @@ ngx_ws_frame_apply_mask(u_char *payload, size_t len, uint32_t masking_key)
         payload[i] ^= key[i % 4];
     }
 }
-
-
-void
-ngx_ws_frame_generate_mask(uint32_t *key)
-{
-    /* Simple pseudo-random mask without nginx dependencies.
-     * Key is based on address of key itself plus file-scoped counter,
-     * which provides sufficient entropy for WebSocket masking. */
-    static ngx_uint_t  mask_seed = 0;
-    mask_seed = (mask_seed + 1) * 1103515245 + 12345;
-    *key = (uint32_t) mask_seed ^ (uint32_t) ((ngx_int_t) key >> 2);
-}

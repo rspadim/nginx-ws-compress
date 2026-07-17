@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/workspace
+    command: >
+      bash -c "
+        set -euo pipefail &&
+        apt-get install -y -qq libxfixes3 libasound2t64 > /dev/null 2>&1 &&
+        cd /opt/nginx-src &&
+        ./auto/configure --with-compat --with-debug --with-cc-opt='-I/usr/local/include' --with-ld-opt='-L/usr/local/lib' --add-dynamic-module=/workspace/ngx_http_ws_deflate_module > /dev/null &&
+        make modules -j\$(nproc) > /dev/null &&
+        make install > /dev/null &&
+        echo '--- C UNIT TESTS ---' &&
+        cd /workspace/tests/c &&
+        gcc -Wall -Wextra -g -I../../ngx_http_ws_deflate_module -I/opt/nginx-src/src/core -I/opt/nginx-src/src/os/unix -I/opt/nginx-src/objs -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 -o test_frame test_frame.c ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_frame.c 2>&1 &&
+        ./test_frame &&
+        gcc -Wall -Wextra -g -I../../ngx_http_ws_deflate_module -I/opt/nginx-src/src/core -I/opt/nginx-src/src/os/unix -I/opt/nginx-src/objs -DNGX_OK=0 -DNGX_AGAIN=-2 -DNGX_ERROR=-1 -o test_compress test_compress.c ../../ngx_http_ws_deflate_module/ngx_http_ws_deflate_compress.c -lz 2>&1 &&
+        ./test_compress &&
+        echo '--- PYTHON TESTS ---' &&
+        python3 -m venv /tmp/venv &&
+        source /tmp/venv/bin/activate &&
+        pip install -q fastapi uvicorn[standard] httpx pytest playwright --break-system-packages > /dev/null 2>&1 &&
+        cd /workspace/tests/python &&
+        /tmp/venv/bin/python -m uvicorn ws_backend:app --host 0.0.0.0 --port 9001 &
+        sleep 2 &&
+        mkdir -p /tmp/nginx-ws-test/logs &&
+        /usr/local/nginx/sbin/nginx -c /workspace/tests/python/nginx.conf -p /tmp/nginx-ws-test &&
+        sleep 1 &&
+        /tmp/venv/bin/python -m pytest /workspace/tests/python/test_compression_active.py -v -s 2>&1 | head -30 &&
+        echo '--- DIRECT WS TEST ---' &&
+        /tmp/venv/bin/python /workspace/tests/local/test_direct.py 2>&1
+      "
+    network_mode: host

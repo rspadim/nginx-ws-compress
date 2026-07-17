@@ -563,7 +563,9 @@ ngx_http_ws_deflate_process_data(
         /* Close frame → forward and signal shutdown */
         if (frame.opcode == NGX_WS_OPCODE_CLOSE) {
             if (!from_upstream) {
-                ngx_ws_frame_generate_mask(&frame.masking_key);
+                static ngx_uint_t  close_seed = 0;
+                close_seed = (close_seed + 1) * 1103515245 + 12345;
+                frame.masking_key = (uint32_t) close_seed;
                 frame.masked = 1;
                 ngx_ws_frame_apply_mask(frame.payload, frame.payload_len,
                                         frame.masking_key);
@@ -587,7 +589,9 @@ ngx_http_ws_deflate_process_data(
             /* Client→upstream frames MUST be masked per RFC 6455.
              * The mask was stripped during unmask+processing;
              * generate a new mask and apply it to the payload. */
-            ngx_ws_frame_generate_mask(&frame.masking_key);
+            static ngx_uint_t  mask_seed = 0;
+            mask_seed = (mask_seed + 1) * 1103515245 + 12345;
+            frame.masking_key = (uint32_t) mask_seed;
             frame.masked = 1;
             ngx_ws_frame_apply_mask(frame.payload, frame.payload_len,
                                     frame.masking_key);
