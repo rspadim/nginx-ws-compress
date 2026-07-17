@@ -240,28 +240,50 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
         accept_len = 28;
     }
 
-    /* Build our response with extensions */
-    ngx_connection_t *c = r->connection;
-    u_char  resp[1024];
-    u_char *resp_end = ngx_snprintf(resp, sizeof(resp),
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Accept: %*s\r\n"
-        "Sec-WebSocket-Extensions: permessage-deflate\r\n"
-        "X-WS-Deflate: active\r\n"
-        "\r\n", accept_len, accept_val);
+    /* Send 101 response to client through nginx filter chain */
+    r->headers_out.status = NGX_HTTP_SWITCHING_PROTOCOLS;
+    r->header_only = 1;
 
-    size_t rlen = resp_end - resp;
+    /* Set response headers */
+    ngx_table_elt_t  *hh;
 
-    ngx_buf_t *b = ngx_create_temp_buf(r->pool, rlen);
-    if (!b) return;
-    ngx_memcpy(b->start, resp, rlen);
-    b->last = b->start + rlen;
-    b->memory = 1;
-    ngx_chain_t out = { b, NULL };
+    hh = ngx_list_push(&r->headers_out.headers);
+    if (hh == NULL) return;
+    hh->hash = 1;
+    ngx_str_set(&hh->key, "Upgrade");
+    ngx_str_set(&hh->value, "websocket");
 
-    if (c->send_chain(c, &out, 0) == NGX_CHAIN_ERROR) {
+    hh = ngx_list_push(&r->headers_out.headers);
+    if (hh == NULL) return;
+    hh->hash = 1;
+    ngx_str_set(&hh->key, "Connection");
+    ngx_str_set(&hh->value, "upgrade");
+
+    hh = ngx_list_push(&r->headers_out.headers);
+    if (hh == NULL) return;
+    hh->hash = 1;
+    ngx_str_set(&hh->key, "Sec-WebSocket-Accept");
+    hh->value.data = accept_val;
+    hh->value.len = accept_len;
+
+    hh = ngx_list_push(&r->headers_out.headers);
+    if (hh == NULL) return;
+    hh->hash = 1;
+    ngx_str_set(&hh->key, "Sec-WebSocket-Extensions");
+    ngx_str_set(&hh->value, "permessage-deflate");
+
+    hh = ngx_list_push(&r->headers_out.headers);
+    if (hh == NULL) return;
+    hh->hash = 1;
+    ngx_str_set(&hh->key, "X-WS-Deflate");
+    ngx_str_set(&hh->value, "active");
+
+    if (ngx_http_send_header(r) == NGX_ERROR) {
+        ngx_close_connection(pc); ctx->backend = NULL; return;
+    }
+
+    /* Flush response to client and start tunnel */
+    if (ngx_http_send_special(r, NGX_HTTP_FLUSH) == NGX_ERROR) {
         ngx_close_connection(pc); ctx->backend = NULL; return;
     }
 
