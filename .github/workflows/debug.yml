@@ -20,7 +20,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential git libpcre3-dev libssl-dev \
-          python3 python3-pip python3-venv curl wget
+          python3 python3-pip python3-venv curl wget libxfixes3 libasound2t64
 
     - name: Install zlib-ng
       run: |
@@ -71,6 +71,8 @@ jobs:
         source venv/bin/activate
         pip install --upgrade pip
         pip install -r requirements.txt
+        playwright install chromium 2>/dev/null || true
+        playwright install-deps chromium 2>/dev/null || true
 
     - name: Run test with full log
       run: |
