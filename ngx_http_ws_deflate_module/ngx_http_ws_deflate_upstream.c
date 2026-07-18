@@ -163,20 +163,35 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
                   "ws_deflate: colon=%p slash=%p", colon, slash);
 
     if (colon && (!slash || colon < slash)) {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: case1 colon before slash");
         host.data = p; host.len = colon - p; p = colon + 1;
-        if (slash) { port = ngx_atoi(p, slash - p);
-                     path.data = slash;
-                     path.len = (size_t)(ngx_ws_upstream_len - (slash - ngx_ws_upstream_url)); }
-        else { port = ngx_atoi(p, len);
-               path.data = (u_char *) "/"; path.len = 1; }
+        if (slash) {
+            ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                          "ws_deflate: has path, port str='%s'", p);
+            port = ngx_atoi(p, slash - p);
+            path.data = slash;
+            path.len = (size_t)(ngx_ws_upstream_len - (slash - ngx_ws_upstream_url));
+        } else {
+            port = ngx_atoi(p, len);
+            path.data = (u_char *) "/"; path.len = 1;
+        }
     } else if (slash) {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: case2 no colon, slash only");
         host.data = p; host.len = slash - p; port = 80;
         path.data = slash;
         path.len = (size_t)(ngx_ws_upstream_len - (slash - ngx_ws_upstream_url));
     } else {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: case3 no colon, no slash");
         host.data = p; host.len = len; port = 80;
         path.data = (u_char *) "/"; path.len = 1;
     }
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: host='%V' port=%d path='%V'",
+                  &host, (int) port, &path);
 
     /* Find the client's WebSocket key from headers */
     ngx_str_t  ws_key;
