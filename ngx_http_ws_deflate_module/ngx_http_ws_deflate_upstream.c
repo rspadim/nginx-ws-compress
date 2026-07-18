@@ -79,8 +79,8 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     }
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: upstream_pass='%V' len=%uz",
-                  &ngx_ws_upstream_pass, ngx_ws_upstream_pass.len);
+                  "ws_deflate: upstream_pass='%s' len=%d",
+                  ngx_ws_upstream_url, ngx_ws_upstream_len);
 
     /* Only WebSocket upgrades */
     if (r->headers_in.upgrade == NULL
