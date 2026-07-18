@@ -120,22 +120,40 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
                   ngx_ws_upstream_url, ngx_ws_upstream_len);
 
     /* Only WebSocket upgrades */
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: checking upgrade header");
+    
     if (r->headers_in.upgrade == NULL
         || r->headers_in.upgrade->value.len != 9
         || ngx_strncasecmp(r->headers_in.upgrade->value.data,
                            (u_char *) "websocket", 9) != 0)
     {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: not a WebSocket upgrade, declining");
         return NGX_DECLINED;
     }
 
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: WEBSOCKET UPGRADE DETECTED");
+
     /* Parse ws_deflate_pass URL */
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: parsing URL '%.*s'",
+                  (int) ngx_ws_upstream_len, ngx_ws_upstream_url);
+    
     u_char *p = ngx_ws_upstream_url;
     size_t  len = (size_t) ngx_ws_upstream_len;
 
     if (len < 7 || ngx_strncasecmp(p, (u_char *) "http://", 7) != 0) {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: URL does not start with http://, declining");
         return NGX_DECLINED;
     }
     p += 7; len -= 7;
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: after http:// prefix, remaining='%.*s'",
+                  (int) len, p);
 
     ngx_str_t host, path;
     ngx_int_t port;
