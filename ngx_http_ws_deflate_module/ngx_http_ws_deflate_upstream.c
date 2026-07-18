@@ -8,6 +8,9 @@
 #include <ngx_http.h>
 #include <ngx_event.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "ngx_http_ws_deflate_handshake.h"
 #include "ngx_http_ws_deflate_upstream.h"
 
@@ -23,16 +26,9 @@ static volatile int  ngx_ws_upstream_len = -1;
 void
 ngx_ws_upstream_set_pass(const u_char *data, size_t len)
 {
-    /* Write to file for worker to read */
     int  fd;
-    u_char  buf[1024];
-    size_t  n;
 
-    if (len > (sizeof(buf) - 1)) {
-        len = sizeof(buf) - 1;
-    }
-
-    /* Also store directly in case we're in the master process */
+    /* Store directly in buffer for same-process access */
     if (len > sizeof(ngx_ws_upstream_url) - 1) {
         len = sizeof(ngx_ws_upstream_url) - 1;
     }
@@ -40,20 +36,18 @@ ngx_ws_upstream_set_pass(const u_char *data, size_t len)
     ngx_ws_upstream_url[len] = '\0';
     ngx_ws_upstream_len = (int) len;
 
-    /* Write to file for worker processes */
-    n = ngx_snprintf(buf, sizeof(buf),
-                     "%*s%N", (size_t) len, data) - buf;
+    /* Write to temp file for worker processes (which have separate .so data segment) */
     fd = open(NGX_WS_UPSTREAM_FILE,
               O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
-        ngx_write_fd(fd, buf, n);
+        ngx_write_fd(fd, data, (size_t) len);
         close(fd);
     }
 }
 
 /* Called during worker init to reload upstream pass from file */
-void
-ngx_ws_upstream_init(void)
+ngx_int_t
+ngx_ws_upstream_init(ngx_cycle_t *cycle)
 {
     int   fd;
     u_char  *p;
@@ -61,12 +55,17 @@ ngx_ws_upstream_init(void)
 
     /* If already set by master (same process), skip */
     if (ngx_ws_upstream_len > 0) {
-        return;
+        ngx_log_error(NGX_LOG_INFO, cycle->log, 0,
+                      "ws_deflate: init_process: already set len=%d",
+                      ngx_ws_upstream_len);
+        return NGX_OK;
     }
 
     fd = open(NGX_WS_UPSTREAM_FILE, O_RDONLY, 0);
     if (fd < 0) {
-        return;
+        ngx_log_error(NGX_LOG_INFO, cycle->log, 0,
+                      "ws_deflate: init_process: no upstream file found");
+        return NGX_OK;
     }
 
     n = ngx_read_fd(fd, ngx_ws_upstream_url, sizeof(ngx_ws_upstream_url) - 1);
@@ -81,7 +80,12 @@ ngx_ws_upstream_init(void)
             n--;
         }
         ngx_ws_upstream_len = (int) n;
+        ngx_log_error(NGX_LOG_INFO, cycle->log, 0,
+                      "ws_deflate: init_process: restored upstream_pass='%s' len=%d",
+                      ngx_ws_upstream_url, ngx_ws_upstream_len);
     }
+
+    return NGX_OK;
 }
 
 
@@ -106,31 +110,10 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                   "ws_deflate: UPSTREAM HANDLER CALLED");
 
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: upstream_url addr=%p len=%d url='%s' "
-                  "handler_addr=%p",
-                  ngx_ws_upstream_url, ngx_ws_upstream_len,
-                  ngx_ws_upstream_len > 0 ? ngx_ws_upstream_url : "(empty)",
-                  ngx_http_ws_deflate_upstream_handler);
-
-    /* TEST: write a value to see if it persists across requests in same worker */
-    if (ngx_ws_upstream_len == -1) {
-        ngx_ws_upstream_len = -2;
-        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: SET marker len=-2, will check on next call");
-        return NGX_DECLINED;
-    }
-
-    /* Check if this is a second call where marker was set */
-    if (ngx_ws_upstream_len == -2) {
-        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_declate: len=-2 (marker was set in a previous call!), "
-                      "write IS persisting across requests!");
-    }
-
     if (ngx_ws_upstream_len <= 0) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: no upstream_pass, declining");
+                      "ws_deflate: no upstream_pass (len=%d), declining",
+                      ngx_ws_upstream_len);
         return NGX_DECLINED;
     }
 

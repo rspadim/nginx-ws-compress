@@ -16,7 +16,7 @@
 void ngx_ws_upstream_set_pass(const u_char *data, size_t len);
 
 /* Called during worker init to restore upstream_pass from file */
-void ngx_ws_upstream_init(void);
+ngx_int_t ngx_ws_upstream_init(ngx_cycle_t *cycle);
 
 
 ngx_int_t ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r);
