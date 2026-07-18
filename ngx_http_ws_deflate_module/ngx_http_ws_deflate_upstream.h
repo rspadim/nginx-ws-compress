@@ -12,8 +12,8 @@
 #include <ngx_http.h>
 
 
-/* Global upstream_pass string — set during config parse, read by upstream handler */
-extern ngx_str_t  ngx_ws_upstream_pass;
+/* Set upstream_pass URL from config directive (called during config parse) */
+void ngx_ws_upstream_set_pass(const u_char *data, size_t len);
 
 
 ngx_int_t ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r);

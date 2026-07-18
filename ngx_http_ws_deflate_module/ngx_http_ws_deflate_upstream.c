@@ -12,8 +12,21 @@
 #include "ngx_http_ws_deflate_upstream.h"
 
 
-/* Global upstream_pass — bypasses nginx config lifecycle issues with dynamic modules */
-ngx_str_t  ngx_ws_upstream_pass = ngx_null_string;
+/* Global upstream_pass buffer — static char array to survive fork/COW */
+static char  ngx_ws_upstream_url[512] = "";
+static volatile int  ngx_ws_upstream_len = -1;
+
+/* Called by directive handler to store upstream_pass URL */
+void
+ngx_ws_upstream_set_pass(const u_char *data, size_t len)
+{
+    if (len > sizeof(ngx_ws_upstream_url) - 1) {
+        len = sizeof(ngx_ws_upstream_url) - 1;
+    }
+    ngx_memcpy(ngx_ws_upstream_url, data, len);
+    ngx_ws_upstream_url[len] = '\0';
+    ngx_ws_upstream_len = (int) len;
+}
 
 
 /* Context */
@@ -38,24 +51,28 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
                   "ws_deflate: UPSTREAM HANDLER CALLED");
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: global addr=%p data=%p len=%uz",
-                  &ngx_ws_upstream_pass,
-                  ngx_ws_upstream_pass.data,
-                  ngx_ws_upstream_pass.len);
+                  "ws_deflate: upstream_url addr=%p len=%d url='%s' "
+                  "handler_addr=%p",
+                  ngx_ws_upstream_url, ngx_ws_upstream_len,
+                  ngx_ws_upstream_len > 0 ? ngx_ws_upstream_url : "(empty)",
+                  ngx_http_ws_deflate_upstream_handler);
 
-    if (ngx_ws_upstream_pass.len == 0) {
-        /* Dump first 16 bytes of struct for debugging */
-        u_char dump[64];
-        ngx_memcpy(dump, &ngx_ws_upstream_pass,
-                   sizeof(ngx_ws_upstream_pass));
+    /* TEST: write a value to see if it persists across requests in same worker */
+    if (ngx_ws_upstream_len == -1) {
+        ngx_ws_upstream_len = -2;
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: global struct dump: "
-                      "%02x %02x %02x %02x %02x %02x %02x %02x "
-                      "%02x %02x %02x %02x %02x %02x %02x %02x",
-                      dump[0], dump[1], dump[2], dump[3],
-                      dump[4], dump[5], dump[6], dump[7],
-                      dump[8], dump[9], dump[10], dump[11],
-                      dump[12], dump[13], dump[14], dump[15]);
+                      "ws_deflate: SET marker len=-2, will check on next call");
+        return NGX_DECLINED;
+    }
+
+    /* Check if this is a second call where marker was set */
+    if (ngx_ws_upstream_len == -2) {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_declate: len=-2 (marker was set in a previous call!), "
+                      "write IS persisting across requests!");
+    }
+
+    if (ngx_ws_upstream_len <= 0) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "ws_deflate: no upstream_pass, declining");
         return NGX_DECLINED;
@@ -75,8 +92,8 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     }
 
     /* Parse ws_deflate_pass URL */
-    u_char *p = ngx_ws_upstream_pass.data;
-    size_t  len = ngx_ws_upstream_pass.len;
+    u_char *p = (u_char *) ngx_ws_upstream_url;
+    size_t  len = (size_t) ngx_ws_upstream_len;
 
     if (len < 7 || ngx_strncasecmp(p, (u_char *) "http://", 7) != 0) {
         return NGX_DECLINED;
@@ -92,13 +109,13 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
         host.data = p; host.len = colon - p; p = colon + 1;
         if (slash) { port = ngx_atoi(p, slash - p);
                      path.data = slash;
-                     path.len = (size_t)(ngx_ws_upstream_pass.data + ngx_ws_upstream_pass.len - slash); }
+                     path.len = (size_t)(ngx_ws_upstream_len - (slash - (u_char *)ngx_ws_upstream_url)); }
         else { port = ngx_atoi(p, len);
                path.data = (u_char *) "/"; path.len = 1; }
     } else if (slash) {
         host.data = p; host.len = slash - p; port = 80;
         path.data = slash;
-        path.len = (size_t)(ngx_ws_upstream_pass.data + ngx_ws_upstream_pass.len - slash);
+        path.len = (size_t)(ngx_ws_upstream_len - (slash - (u_char *)ngx_ws_upstream_url));
     } else {
         host.data = p; host.len = len; port = 80;
         path.data = (u_char *) "/"; path.len = 1;
