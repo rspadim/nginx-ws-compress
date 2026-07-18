@@ -304,16 +304,16 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     ngx_memcpy(ctx->buf->start, req_buf, req_len);
     ctx->buf->last = ctx->buf->start + req_len;
 
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: handling write event");
+    /* Store the request for later sending */
+    ctx->state = 0;
 
-    /* Register write event and keep request alive */
-    ngx_handle_write_event(pc->write, 0);
+    /* Use r->write_event_handler to continue when events occur */
     r->write_event_handler = ngx_ws_upstream_req_handler;
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: returning NGX_DONE");
 
-    return NGX_DONE;
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: returning NGX_AGAIN");
+
+    return NGX_AGAIN;
 }
 
 
