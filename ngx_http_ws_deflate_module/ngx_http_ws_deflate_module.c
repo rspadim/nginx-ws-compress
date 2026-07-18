@@ -362,7 +362,11 @@ ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     value = cf->args->elts;
-    lcf->upstream_pass = value[1];
+    lcf->upstream_pass.data = ngx_pstrdup(cf->pool, &value[1]);
+    if (lcf->upstream_pass.data == NULL) {
+        return NGX_CONF_ERROR;
+    }
+    lcf->upstream_pass.len = value[1].len;
 
     ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
                        "ws_deflate_pass set to '%V' (%uz bytes) conf=%p",
