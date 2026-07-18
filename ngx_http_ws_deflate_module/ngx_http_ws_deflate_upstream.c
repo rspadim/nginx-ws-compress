@@ -310,30 +310,47 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
                   "ws_deflate: trying to send upgrade request, ready=%d",
                   pc->write->ready);
 
-    /* Try to send upgrade request directly — localhost typically connects quickly */
-    ngx_ws_upstream_send_request(pc->write);
+    /* Try to send upgrade request directly using write() syscall */
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: sending upgrade request via write, fd=%d, ready=%d",
+                  fd, pc->write->ready);
+
+    /* Use write() directly instead of event-based approach to avoid cycle issues */
+    ssize_t sent = ngx_write_fd(fd, (void *) ctx->buf->start,
+                                ctx->buf->last - ctx->buf->start);
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: after send_request, state=%d",
-                  ctx->state);
+                  "ws_deflate: write returned %z errno=%d",
+                  sent, errno);
 
-    if (ctx->state == 0) {
-        /* Connect still in progress, schedule retry */
+    if (sent > 0) {
+        ctx->buf->pos = ctx->buf->last;
+        ctx->state = 1;
+        /* Switch to read mode */
+        ctx->buf->pos = ctx->buf->start;
+        pc->read->handler = ngx_ws_upstream_read_response;
+        ngx_handle_read_event(pc->read, 0);
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: scheduling retry with timer");
-
-        pc->write->handler = ngx_ws_upstream_send_request;
-        ngx_add_timer(pc->write, 10);
-
-        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: returning NGX_DONE (timer scheduled)");
+                      "ws_deflate: upgrade request sent, waiting for backend response");
         return NGX_DONE;
     }
 
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: returning NGX_DONE, waiting for backend response");
+    /* Write failed — either connect still in progress or error */
+    if (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK
+        || errno == EALREADY || errno == ENOTCONN)
+    {
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: connect still in progress, scheduling timer");
+        pc->write->handler = ngx_ws_upstream_send_request;
+        ngx_add_timer(pc->write, 10);
+        return NGX_DONE;
+    }
 
-    return NGX_DONE;
+    /* Real error */
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                  "ws_deflate: write error errno=%d", errno);
+    ngx_close_connection(pc);
+    return NGX_HTTP_BAD_GATEWAY;
 }
 
 
@@ -342,7 +359,13 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
 static void
 ngx_ws_upstream_send_request(ngx_event_t *ev)
 {
+    ngx_log_error(NGX_LOG_INFO, ev->log, 0,
+                  "ws_deflate: send_request entered, ev=%p", ev);
+
     ngx_connection_t *c = ev->data;
+    ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                  "ws_deflate: send_request c=%p c->data=%p", c, c->data);
+
     ngx_http_request_t *r = c->data;
     ngx_http_ws_deflate_upstream_ctx_t *ctx;
     ctx = ngx_http_get_module_ctx(r, ngx_http_ws_deflate_module);
