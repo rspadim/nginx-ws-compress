@@ -84,7 +84,7 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
     { ngx_string("ws_deflate_pass"),
       NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
       ngx_http_ws_deflate_pass_slot,
-      0,
+      NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
 
