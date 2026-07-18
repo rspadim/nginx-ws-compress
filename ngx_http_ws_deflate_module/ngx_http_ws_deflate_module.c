@@ -82,9 +82,9 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       NULL },
 
     { ngx_string("ws_deflate_pass"),
-      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
+      NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
       ngx_http_ws_deflate_pass_slot,
-      0,
+      NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
 
@@ -354,8 +354,13 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static char *
 ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_ws_deflate_main_conf_t *mcf = conf;
+    ngx_http_ws_deflate_main_conf_t *mcf;
     ngx_str_t *value;
+
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_ws_deflate_module);
+    if (mcf == NULL) {
+        return NGX_CONF_ERROR;
+    }
 
     if (cf->args->nelts < 2) {
         return NGX_CONF_ERROR;
@@ -372,6 +377,7 @@ ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                        "ws_deflate_pass set to '%V' (%uz bytes) conf=%p",
                        &mcf->upstream_pass, mcf->upstream_pass.len, mcf);
 
+    /* Return NGX_CONF_OK to allow directive in location, but value is stored in main conf */
     return NGX_CONF_OK;
 }
 
