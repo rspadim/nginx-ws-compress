@@ -16,7 +16,7 @@
 
 
 /* Global upstream_pass buffer — static char array */
-static char  ngx_ws_upstream_url[512] = "";
+static u_char  ngx_ws_upstream_url[512] = "";
 static volatile int  ngx_ws_upstream_len = -1;
 
 /* Config lifecycle bridge: master writes to file, worker reads it on init_process */
@@ -40,7 +40,7 @@ ngx_ws_upstream_set_pass(const u_char *data, size_t len)
     fd = open(NGX_WS_UPSTREAM_FILE,
               O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
-        ngx_write_fd(fd, data, (size_t) len);
+        ngx_write_fd(fd, (void *) data, (size_t) len);
         close(fd);
     }
 }
@@ -50,7 +50,6 @@ ngx_int_t
 ngx_ws_upstream_init(ngx_cycle_t *cycle)
 {
     int   fd;
-    u_char  *p;
     ssize_t  n;
 
     /* If already set by master (same process), skip */
@@ -73,12 +72,11 @@ ngx_ws_upstream_init(ngx_cycle_t *cycle)
 
     if (n > 0) {
         /* Remove trailing newline */
-        p = ngx_ws_upstream_url + n - 1;
-        while (p >= ngx_ws_upstream_url && (*p == '\n' || *p == '\r')) {
-            *p = '\0';
-            p--;
+        while (n > 0 && (ngx_ws_upstream_url[n-1] == '\n'
+                         || ngx_ws_upstream_url[n-1] == '\r')) {
             n--;
         }
+        ngx_ws_upstream_url[n] = '\0';
         ngx_ws_upstream_len = (int) n;
         ngx_log_error(NGX_LOG_INFO, cycle->log, 0,
                       "ws_deflate: init_process: restored upstream_pass='%s' len=%d",
@@ -131,7 +129,7 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     }
 
     /* Parse ws_deflate_pass URL */
-    u_char *p = (u_char *) ngx_ws_upstream_url;
+    u_char *p = ngx_ws_upstream_url;
     size_t  len = (size_t) ngx_ws_upstream_len;
 
     if (len < 7 || ngx_strncasecmp(p, (u_char *) "http://", 7) != 0) {
@@ -148,13 +146,13 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
         host.data = p; host.len = colon - p; p = colon + 1;
         if (slash) { port = ngx_atoi(p, slash - p);
                      path.data = slash;
-                     path.len = (size_t)(ngx_ws_upstream_len - (slash - (u_char *)ngx_ws_upstream_url)); }
+                     path.len = (size_t)(ngx_ws_upstream_len - (slash - ngx_ws_upstream_url)); }
         else { port = ngx_atoi(p, len);
                path.data = (u_char *) "/"; path.len = 1; }
     } else if (slash) {
         host.data = p; host.len = slash - p; port = 80;
         path.data = slash;
-        path.len = (size_t)(ngx_ws_upstream_len - (slash - (u_char *)ngx_ws_upstream_url));
+        path.len = (size_t)(ngx_ws_upstream_len - (slash - ngx_ws_upstream_url));
     } else {
         host.data = p; host.len = len; port = 80;
         path.data = (u_char *) "/"; path.len = 1;
