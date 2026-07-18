@@ -82,9 +82,9 @@ static ngx_command_t ngx_http_ws_deflate_commands[] = {
       NULL },
 
     { ngx_string("ws_deflate_pass"),
-      NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
       ngx_http_ws_deflate_pass_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
       0,
       NULL },
 
@@ -354,7 +354,7 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static char *
 ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_ws_deflate_loc_conf_t *lcf = conf;
+    ngx_http_ws_deflate_main_conf_t *mcf = conf;
     ngx_str_t *value;
 
     if (cf->args->nelts < 2) {
@@ -362,11 +362,11 @@ ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     value = cf->args->elts;
-    lcf->upstream_pass.data = ngx_pstrdup(cf->pool, &value[1]);
-    if (lcf->upstream_pass.data == NULL) {
+    mcf->upstream_pass.data = ngx_pstrdup(cf->pool, &value[1]);
+    if (mcf->upstream_pass.data == NULL) {
         return NGX_CONF_ERROR;
     }
-    lcf->upstream_pass.len = value[1].len;
+    mcf->upstream_pass.len = value[1].len;
 
     ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
                        "ws_deflate_pass set to '%V' (%uz bytes) conf=%p",

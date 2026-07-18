@@ -21,6 +21,7 @@ typedef struct {
 
 typedef struct {
     ngx_str_t     except_pattern;
+    ngx_str_t     upstream_pass;
 } ngx_http_ws_deflate_main_conf_t;
 
 

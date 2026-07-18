@@ -29,27 +29,21 @@ static void ngx_ws_upstream_req_handler(ngx_http_request_t *r);
 ngx_int_t
 ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
 {
-    ngx_http_ws_deflate_loc_conf_t  *conf;
+    ngx_http_ws_deflate_main_conf_t  *mcf;
     
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                   "ws_deflate: UPSTREAM HANDLER CALLED");
 
-    conf = ngx_http_get_module_loc_conf(r, ngx_http_ws_deflate_module);
-    if (conf == NULL) {
-        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: conf is NULL");
-        return NGX_DECLINED;
-    }
-
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: upstream_pass='%V' len=%uz conf=%p",
-                  &conf->upstream_pass, conf->upstream_pass.len, conf);
-
-    if (conf->upstream_pass.len == 0) {
+    mcf = ngx_http_get_module_main_conf(r, ngx_http_ws_deflate_module);
+    if (mcf == NULL || mcf->upstream_pass.len == 0) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "ws_deflate: no upstream_pass, declining");
         return NGX_DECLINED;
     }
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: upstream_pass='%V' len=%uz",
+                  &mcf->upstream_pass, mcf->upstream_pass.len);
 
     /* Only WebSocket upgrades */
     if (r->headers_in.upgrade == NULL
@@ -61,8 +55,8 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     }
 
     /* Parse ws_deflate_pass URL */
-    u_char *p = conf->upstream_pass.data;
-    size_t  len = conf->upstream_pass.len;
+    u_char *p = mcf->upstream_pass.data;
+    size_t  len = mcf->upstream_pass.len;
 
     if (len < 7 || ngx_strncasecmp(p, (u_char *) "http://", 7) != 0) {
         return NGX_DECLINED;
@@ -78,13 +72,13 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
         host.data = p; host.len = colon - p; p = colon + 1;
         if (slash) { port = ngx_atoi(p, slash - p);
                      path.data = slash;
-                     path.len = (size_t)(conf->upstream_pass.data + conf->upstream_pass.len - slash); }
+                     path.len = (size_t)(mcf->upstream_pass.data + mcf->upstream_pass.len - slash); }
         else { port = ngx_atoi(p, len);
                path.data = (u_char *) "/"; path.len = 1; }
     } else if (slash) {
         host.data = p; host.len = slash - p; port = 80;
         path.data = slash;
-        path.len = (size_t)(conf->upstream_pass.data + conf->upstream_pass.len - slash);
+        path.len = (size_t)(mcf->upstream_pass.data + mcf->upstream_pass.len - slash);
     } else {
         host.data = p; host.len = len; port = 80;
         path.data = (u_char *) "/"; path.len = 1;
