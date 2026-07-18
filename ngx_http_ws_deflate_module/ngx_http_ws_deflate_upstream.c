@@ -194,6 +194,9 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
                   &host, (int) port, &path);
 
     /* Find the client's WebSocket key from headers */
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: searching for sec-websocket-key");
+    
     ngx_str_t  ws_key;
     ngx_memzero(&ws_key, sizeof(ws_key));
     ngx_list_part_t *part = &r->headers_in.headers.part;
@@ -215,13 +218,26 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
         }
     }
 
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: ws_key='%V' len=%uz",
+                  &ws_key, ws_key.len);
+
     /* Create socket */
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: creating socket");
+    
     int fd = ngx_socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) return NGX_HTTP_INTERNAL_SERVER_ERROR;
     if (ngx_nonblocking(fd) == -1) { ngx_close_socket(fd); return NGX_HTTP_INTERNAL_SERVER_ERROR; }
 
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: getting connection for fd=%d", fd);
+    
     ngx_connection_t *pc = ngx_get_connection(fd, r->connection->log);
     if (pc == NULL) { ngx_close_socket(fd); return NGX_HTTP_INTERNAL_SERVER_ERROR; }
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: allocating context pc=%p", pc);
 
     ngx_http_ws_deflate_upstream_ctx_t *ctx;
     ctx = ngx_pcalloc(r->pool, sizeof(*ctx));
@@ -235,12 +251,20 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     pc->pool = r->pool;
     pc->log = r->connection->log;
     pc->sendfile = 0;
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: setting event handlers read=%p write=%p",
+                  pc->read, pc->write);
+
     pc->read->handler = ngx_ws_upstream_send_request;
     pc->write->handler = ngx_ws_upstream_send_request;
 
     ngx_http_set_ctx(r, ctx, ngx_http_ws_deflate_module);
 
     /* Connect */
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: connecting to 127.0.0.1:%d", (int) port);
+    
     struct sockaddr_in sin;
     ngx_memzero(&sin, sizeof(sin));
     sin.sin_family = AF_INET;
@@ -248,6 +272,10 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     int rc = connect(fd, (struct sockaddr *) &sin, sizeof(sin));
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: connect returned %d errno=%d",
+                  rc, ngx_socket_errno);
+    
     if (rc == -1 && ngx_socket_errno != NGX_EINPROGRESS) {
         ngx_close_connection(pc);
         return NGX_HTTP_BAD_GATEWAY;
