@@ -4,6 +4,7 @@
 
 #include "ngx_http_ws_deflate_handshake.h"
 #include "ngx_http_ws_deflate_tunnel.h"
+#include "ngx_http_ws_deflate_upstream.h"
 
 
 static ngx_int_t ngx_http_ws_deflate_postconfiguration(ngx_conf_t *cf);
@@ -354,30 +355,23 @@ ngx_http_ws_deflate_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static char *
 ngx_http_ws_deflate_pass_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_ws_deflate_main_conf_t *mcf;
     ngx_str_t *value;
-
-    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_ws_deflate_module);
-    if (mcf == NULL) {
-        return NGX_CONF_ERROR;
-    }
 
     if (cf->args->nelts < 2) {
         return NGX_CONF_ERROR;
     }
 
     value = cf->args->elts;
-    mcf->upstream_pass.data = ngx_pstrdup(cf->pool, &value[1]);
-    if (mcf->upstream_pass.data == NULL) {
+    ngx_ws_upstream_pass.data = ngx_pstrdup(cf->pool, &value[1]);
+    if (ngx_ws_upstream_pass.data == NULL) {
         return NGX_CONF_ERROR;
     }
-    mcf->upstream_pass.len = value[1].len;
+    ngx_ws_upstream_pass.len = value[1].len;
 
     ngx_conf_log_error(NGX_LOG_NOTICE, cf, 0,
-                       "ws_deflate_pass set to '%V' (%uz bytes) conf=%p",
-                       &mcf->upstream_pass, mcf->upstream_pass.len, mcf);
+                       "ws_deflate_pass set to '%V' (%uz bytes)",
+                       &ngx_ws_upstream_pass, ngx_ws_upstream_pass.len);
 
-    /* Return NGX_CONF_OK to allow directive in location, but value is stored in main conf */
     return NGX_CONF_OK;
 }
 
