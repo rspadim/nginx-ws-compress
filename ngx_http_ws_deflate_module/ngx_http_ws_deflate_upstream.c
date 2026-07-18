@@ -306,10 +306,11 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     /* Store the request for later sending */
     ctx->state = 0;
 
-    /* Try to send upgrade request directly — localhost typically connects quickly */
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: sending upgrade request directly");
+                  "ws_deflate: trying to send upgrade request, ready=%d",
+                  pc->write->ready);
 
+    /* Try to send upgrade request directly — localhost typically connects quickly */
     ngx_ws_upstream_send_request(pc->write);
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
@@ -317,15 +318,20 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
                   ctx->state);
 
     if (ctx->state == 0) {
-        /* Connect still in progress, need to wait */
+        /* Connect still in progress, schedule retry */
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                      "ws_deflate: connect in progress, returning NGX_AGAIN");
-        r->write_event_handler = ngx_http_ws_deflate_upstream_handler;
-        return NGX_AGAIN;
+                      "ws_deflate: scheduling retry with timer");
+
+        pc->write->handler = ngx_ws_upstream_send_request;
+        ngx_add_timer(pc->write, 10);
+
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: returning NGX_DONE (timer scheduled)");
+        return NGX_DONE;
     }
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: returning NGX_DONE, backend will respond");
+                  "ws_deflate: returning NGX_DONE, waiting for backend response");
 
     return NGX_DONE;
 }
@@ -465,16 +471,16 @@ ngx_ws_upstream_read_response(ngx_event_t *ev)
     }
 
     /* Start raw tunnel */
-    ngx_connection_t *c = r->connection;
+    ngx_connection_t *cln = r->connection;
     ctx->state = 2;
-    c->read->handler = ngx_ws_upstream_tunnel_read;
-    c->read->data = r;
+    cln->read->handler = ngx_ws_upstream_tunnel_read;
+    cln->read->data = r;
     pc->read->handler = ngx_ws_upstream_tunnel_read;
     pc->read->data = r;
-    c->write->handler = ngx_ws_upstream_tunnel_write;
+    cln->write->handler = ngx_ws_upstream_tunnel_write;
     pc->write->handler = ngx_ws_upstream_tunnel_write;
 
-    ngx_handle_read_event(c->read, 0);
+    ngx_handle_read_event(cln->read, 0);
     ngx_handle_read_event(pc->read, 0);
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
