@@ -138,8 +138,7 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
 
     /* Parse ws_deflate_pass URL */
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: parsing URL '%.*s'",
-                  (int) ngx_ws_upstream_len, ngx_ws_upstream_url);
+                  "ws_deflate: parsing URL '%s'", ngx_ws_upstream_url);
     
     u_char *p = ngx_ws_upstream_url;
     size_t  len = (size_t) ngx_ws_upstream_len;
@@ -152,13 +151,16 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     p += 7; len -= 7;
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: after http:// prefix, remaining='%.*s'",
-                  (int) len, p);
+                  "ws_deflate: after http:// prefix, remaining='%s'",
+                  p);
 
     ngx_str_t host, path;
     ngx_int_t port;
     u_char *colon = (u_char *) ngx_strchr(p, ':');
     u_char *slash = (u_char *) ngx_strchr(p, '/');
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: colon=%p slash=%p", colon, slash);
 
     if (colon && (!slash || colon < slash)) {
         host.data = p; host.len = colon - p; p = colon + 1;
