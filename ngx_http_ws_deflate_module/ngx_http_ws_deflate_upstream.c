@@ -42,8 +42,8 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     }
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: upstream_pass='%V' len=%uz",
-                  &conf->upstream_pass, conf->upstream_pass.len);
+                  "ws_deflate: upstream_pass='%V' len=%uz conf=%p",
+                  &conf->upstream_pass, conf->upstream_pass.len, conf);
 
     if (conf->upstream_pass.len == 0) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
