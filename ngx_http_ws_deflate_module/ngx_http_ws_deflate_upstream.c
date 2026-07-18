@@ -12,20 +12,76 @@
 #include "ngx_http_ws_deflate_upstream.h"
 
 
-/* Global upstream_pass buffer — static char array to survive fork/COW */
+/* Global upstream_pass buffer — static char array */
 static char  ngx_ws_upstream_url[512] = "";
 static volatile int  ngx_ws_upstream_len = -1;
 
-/* Called by directive handler to store upstream_pass URL */
+/* Config lifecycle bridge: master writes to file, worker reads it on init_process */
+#define NGX_WS_UPSTREAM_FILE  "/tmp/nginx_ws_upstream_pass.txt"
+
+/* Called by directive handler to store upstream_pass URL (runs in master) */
 void
 ngx_ws_upstream_set_pass(const u_char *data, size_t len)
 {
+    /* Write to file for worker to read */
+    int  fd;
+    u_char  buf[1024];
+    size_t  n;
+
+    if (len > (sizeof(buf) - 1)) {
+        len = sizeof(buf) - 1;
+    }
+
+    /* Also store directly in case we're in the master process */
     if (len > sizeof(ngx_ws_upstream_url) - 1) {
         len = sizeof(ngx_ws_upstream_url) - 1;
     }
     ngx_memcpy(ngx_ws_upstream_url, data, len);
     ngx_ws_upstream_url[len] = '\0';
     ngx_ws_upstream_len = (int) len;
+
+    /* Write to file for worker processes */
+    n = ngx_snprintf(buf, sizeof(buf),
+                     "%*s%N", (size_t) len, data) - buf;
+    fd = open(NGX_WS_UPSTREAM_FILE,
+              O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        ngx_write_fd(fd, buf, n);
+        close(fd);
+    }
+}
+
+/* Called during worker init to reload upstream pass from file */
+void
+ngx_ws_upstream_init(void)
+{
+    int   fd;
+    u_char  *p;
+    ssize_t  n;
+
+    /* If already set by master (same process), skip */
+    if (ngx_ws_upstream_len > 0) {
+        return;
+    }
+
+    fd = open(NGX_WS_UPSTREAM_FILE, O_RDONLY, 0);
+    if (fd < 0) {
+        return;
+    }
+
+    n = ngx_read_fd(fd, ngx_ws_upstream_url, sizeof(ngx_ws_upstream_url) - 1);
+    close(fd);
+
+    if (n > 0) {
+        /* Remove trailing newline */
+        p = ngx_ws_upstream_url + n - 1;
+        while (p >= ngx_ws_upstream_url && (*p == '\n' || *p == '\r')) {
+            *p = '\0';
+            p--;
+            n--;
+        }
+        ngx_ws_upstream_len = (int) n;
+    }
 }
 
 
