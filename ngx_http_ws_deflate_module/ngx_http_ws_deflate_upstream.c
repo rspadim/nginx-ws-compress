@@ -37,7 +37,25 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                   "ws_deflate: UPSTREAM HANDLER CALLED");
 
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: global addr=%p data=%p len=%uz",
+                  &ngx_ws_upstream_pass,
+                  ngx_ws_upstream_pass.data,
+                  ngx_ws_upstream_pass.len);
+
     if (ngx_ws_upstream_pass.len == 0) {
+        /* Dump first 16 bytes of struct for debugging */
+        u_char dump[64];
+        ngx_memcpy(dump, &ngx_ws_upstream_pass,
+                   sizeof(ngx_ws_upstream_pass));
+        ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                      "ws_deflate: global struct dump: "
+                      "%02x %02x %02x %02x %02x %02x %02x %02x "
+                      "%02x %02x %02x %02x %02x %02x %02x %02x",
+                      dump[0], dump[1], dump[2], dump[3],
+                      dump[4], dump[5], dump[6], dump[7],
+                      dump[8], dump[9], dump[10], dump[11],
+                      dump[12], dump[13], dump[14], dump[15]);
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
                       "ws_deflate: no upstream_pass, declining");
         return NGX_DECLINED;
