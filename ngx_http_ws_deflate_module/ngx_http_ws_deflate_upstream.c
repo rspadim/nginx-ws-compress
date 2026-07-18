@@ -307,13 +307,24 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
     /* Store the request for later sending */
     ctx->state = 0;
 
-    /* Use r->write_event_handler to continue when events occur */
-    r->write_event_handler = ngx_ws_upstream_req_handler;
+    /* Add backend write event to send upgrade request when connected */
+    pc->write->handler = ngx_ws_upstream_send_request;
+    pc->read->handler = ngx_ws_upstream_read_response;
+
+    if (ngx_add_event(pc->write, NGX_WRITE_EVENT, 0) != NGX_OK) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "ws_deflate: failed to add write event");
+        ngx_close_connection(pc);
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /* Set read event handler for response */
+    pc->read->handler = ngx_ws_upstream_read_response;
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: returning NGX_AGAIN");
+                  "ws_deflate: returning NGX_DONE, waiting for backend");
 
-    return NGX_AGAIN;
+    return NGX_DONE;
 }
 
 
