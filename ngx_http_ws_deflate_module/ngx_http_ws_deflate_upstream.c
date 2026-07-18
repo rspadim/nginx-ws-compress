@@ -281,6 +281,9 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
         return NGX_HTTP_BAD_GATEWAY;
     }
 
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: building upgrade request");
+
     /* Build upgrade request WITHOUT Sec-WebSocket-Extensions */
     u_char  req_buf[4096];
     u_char *req_end = ngx_snprintf(req_buf, sizeof(req_buf),
@@ -293,15 +296,22 @@ ngx_http_ws_deflate_upstream_handler(ngx_http_request_t *r)
         "\r\n",
         &path, &host, port, &ws_key);
 
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: request built, len=%z",
+                  req_end - req_buf);
+
     size_t req_len = req_end - req_buf;
     ngx_memcpy(ctx->buf->start, req_buf, req_len);
     ctx->buf->last = ctx->buf->start + req_len;
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "ws_deflate: handling write event");
 
     /* Register write event and keep request alive */
     ngx_handle_write_event(pc->write, 0);
     r->write_event_handler = ngx_ws_upstream_req_handler;
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                  "ws_deflate: waiting for backend connection");
+                  "ws_deflate: returning NGX_DONE");
 
     return NGX_DONE;
 }
